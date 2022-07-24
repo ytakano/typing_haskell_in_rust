@@ -134,7 +134,7 @@ impl HasKind for Type {
 
 trait Types {
     fn apply(&self, subst: &Subst) -> Self; // apply `subst` to `self`
-    fn tv(&self) -> Vec<Tyvar>; // set of type variables in `self`
+    fn tv(&self) -> BTreeSet<Tyvar>; // set of type variables in `self`
 }
 
 impl Types for Type {
@@ -150,11 +150,20 @@ impl Types for Type {
         }
     }
 
-    fn tv(&self) -> Vec<Tyvar> {
+    fn tv(&self) -> BTreeSet<Tyvar> {
         match self {
-            Type::TVar(u) => vec![u.clone()],
-            Type::TAp(l, r) => l.tv().into_iter().chain(r.tv()).collect(),
-            _ => vec![],
+            Type::TVar(u) => {
+                let mut result = BTreeSet::new();
+                result.insert(u.clone());
+                result
+            }
+            Type::TAp(l, r) => {
+                let mut set1 = l.tv();
+                let mut set2 = r.tv();
+                set1.append(&mut set2);
+                set1
+            }
+            _ => BTreeSet::new(),
         }
     }
 }
@@ -164,9 +173,78 @@ impl<T: Types> Types for Vec<T> {
         self.iter().map(|t| t.apply(subst)).collect()
     }
 
-    fn tv(&self) -> Vec<Tyvar> {
+    fn tv(&self) -> BTreeSet<Tyvar> {
         self.iter().flat_map(|t| t.tv()).collect()
     }
+}
+
+/// Predicate.
+#[derive(PartialEq, Eq, Debug, Clone)]
+struct Pred {
+    id: Cow<'static, str>,
+    t: Type,
+}
+
+/// Qualifier.
+#[derive(PartialEq, Eq, Debug, Clone)]
+struct Qual<T> {
+    preds: Vec<Pred>,
+    t: T,
+}
+
+impl Types for Pred {
+    fn apply(&self, subst: &Subst) -> Self {
+        Pred {
+            id: self.id.clone(),
+            t: self.t.apply(subst),
+        }
+    }
+
+    fn tv(&self) -> BTreeSet<Tyvar> {
+        self.t.tv()
+    }
+}
+
+impl<T: Types> Types for Qual<T> {
+    fn apply(&self, subst: &Subst) -> Self {
+        Qual {
+            preds: self.preds.iter().map(|p| p.apply(subst)).collect(),
+            t: self.t.apply(subst),
+        }
+    }
+
+    fn tv(&self) -> BTreeSet<Tyvar> {
+        let mut set1 = self.preds.tv();
+        let mut set2 = self.t.tv();
+        set1.append(&mut set2);
+        set1
+    }
+}
+
+/// Type class.
+struct Class {
+    super_class: Vec<Cow<'static, str>>,
+    insts: Vec<Inst>,
+}
+
+/// Instance.
+struct Inst {
+    qual: Qual<Pred>,
+}
+
+/// Get the most general unifier of two predicates.
+fn mgu_pred(p1: &Pred, p2: &Pred) -> Result<Subst, DynError> {
+    if p1.id != p2.id {
+        return Err("classes differ".into());
+    }
+    mgu(&p1.t, &p2.t)
+}
+
+fn type_match_pred(p1: &Pred, p2: &Pred) -> Result<Subst, DynError> {
+    if p1.id != p2.id {
+        return Err("classes differ".into());
+    }
+    type_match(&p1.t, &p2.t)
 }
 
 /// Compose two substitutions.
@@ -241,7 +319,6 @@ fn type_match(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
             merge(s1, s2)
         }
         (Type::TVar(u), t) if u.kind() == t.kind() => Ok(vec![(u.clone(), t.clone())]),
-        (t, Type::TVar(u)) => var_bind(u, t),
         (Type::TCon(tc1), Type::TCon(tc2)) if tc1 == tc2 => Ok(NULL_SUBST),
         _ => Err("types do not match".into()),
     }
