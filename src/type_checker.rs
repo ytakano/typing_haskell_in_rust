@@ -1,6 +1,9 @@
 use crate::error::DynError;
 use once_cell::sync::Lazy;
-use std::{borrow::Cow, collections::BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 type Subst = Vec<(Tyvar, Type)>;
 const NULL_SUBST: Subst = vec![];
@@ -230,6 +233,70 @@ struct Class {
 /// Instance.
 struct Inst {
     qual: Qual<Pred>,
+}
+
+struct ClassEnv {
+    classes: BTreeMap<Cow<'static, str>, Class>,
+    default_types: Vec<Type>, // default types
+}
+
+impl ClassEnv {
+    fn new(default_types: Vec<Type>) -> Self {
+        ClassEnv {
+            classes: BTreeMap::new(),
+            default_types,
+        }
+    }
+
+    fn add_class(
+        &mut self,
+        id: Cow<'static, str>,
+        super_class: Vec<Cow<'static, str>>,
+    ) -> Result<(), DynError> {
+        if self.classes.contains_key(&id) {
+            return Err("class already defined".into());
+        }
+
+        if super_class.iter().any(|id| !self.classes.contains_key(id)) {
+            return Err("super class not defined".into());
+        }
+
+        self.classes.insert(
+            id,
+            Class {
+                super_class,
+                insts: Vec::new(),
+            },
+        );
+
+        Ok(())
+    }
+
+    fn add_inst(&mut self, id: Cow<'static, str>, qual: Qual<Pred>) -> Result<(), DynError> {
+        if !self.classes.contains_key(&id) {
+            return Err("class not defined".into());
+        }
+
+        fn overlap(p1: &Pred, p2: &Pred) -> bool {
+            mgu_pred(p1, p2).is_ok()
+        }
+
+        if qual.preds.iter().any(|p| overlap(&qual.t, p)) {
+            return Err("overlapping instance".into());
+        }
+
+        self.classes.get_mut(&id).unwrap().insts.push(Inst { qual });
+
+        Ok(())
+    }
+
+    fn super_class(&self, id: &Cow<'static, str>) -> Option<&Vec<Cow<'static, str>>> {
+        self.classes.get(id).map(|c| &c.super_class)
+    }
+
+    fn insts(&self, id: &Cow<'static, str>) -> Option<&Vec<Inst>> {
+        self.classes.get(id).map(|c| &c.insts)
+    }
 }
 
 /// Get the most general unifier of two predicates.
