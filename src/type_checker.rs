@@ -179,7 +179,7 @@ fn compose(s1: &Subst, s2: &Subst) -> Subst {
 
 /// Merge two substitutions.
 /// If there is a conflict, return `Err`.
-fn merge(s1: &Subst, s2: &Subst) -> Result<Subst, DynError> {
+fn merge(mut s1: Subst, s2: Subst) -> Result<Subst, DynError> {
     fn agree(s1: &Subst, s2: &Subst) -> bool {
         let set1: BTreeSet<_> = s1.iter().map(|(t, _)| t).collect();
         let set2: BTreeSet<_> = s2.iter().map(|(t, _)| t).collect();
@@ -187,10 +187,63 @@ fn merge(s1: &Subst, s2: &Subst) -> Result<Subst, DynError> {
             .all(|t| Type::TVar((*t).clone()).apply(s1) == Type::TVar((*t).clone()).apply(s2))
     }
 
-    if agree(s1, s2) {
-        Ok([s1.clone(), s2.clone()].concat())
+    if agree(&s1, &s2) {
+        s1.extend(s2.into_iter());
+        Ok(s1)
     } else {
         Err("merge: type variable conflict".into())
+    }
+}
+
+/// Get the most general unifier.
+fn mgu(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
+    match (t1, t2) {
+        (Type::TAp(l1, r1), Type::TAp(l2, r2)) => {
+            let s1 = mgu(l1, l2)?;
+            let s2 = mgu(&r1.apply(&s1), &r2.apply(&s1))?;
+            Ok(compose(&s2, &s1))
+        }
+        (Type::TVar(u), t) => var_bind(u, t),
+        (t, Type::TVar(u)) => var_bind(u, t),
+        (Type::TCon(tc1), Type::TCon(tc2)) if tc1 == tc2 => Ok(NULL_SUBST),
+        _ => Err("types do not unify".into()),
+    }
+}
+
+/// Special case of unifying a variable `u` with a type `t`.
+fn var_bind(u: &Tyvar, t: &Type) -> Result<Subst, DynError> {
+    // t == Type::TVar(u)
+    if let Type::TVar(u_) = t {
+        if u == u_ {
+            return Ok(NULL_SUBST);
+        }
+    }
+
+    if t.tv().contains(u) {
+        return Err("occurs check fails".into());
+    }
+
+    // ensure that the substitution is kind-preserving
+    if u.kind() != t.kind() {
+        return Err("kinds do not match".into());
+    }
+
+    Ok(vec![(u.clone(), t.clone())])
+}
+
+/// Given two types `t1` and `t2`, the goal of matching is to find a substitution s such that apply `t1.(s) == t2`.
+/// Because the substitution is applied only to one type, this operation is often described as one-way matching.
+fn type_match(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
+    match (t1, t2) {
+        (Type::TAp(l1, r1), Type::TAp(l2, r2)) => {
+            let s1 = type_match(l1, l2)?;
+            let s2 = type_match(r1, r2)?;
+            merge(s1, s2)
+        }
+        (Type::TVar(u), t) if u.kind() == t.kind() => Ok(vec![(u.clone(), t.clone())]),
+        (t, Type::TVar(u)) => var_bind(u, t),
+        (Type::TCon(tc1), Type::TCon(tc2)) if tc1 == tc2 => Ok(NULL_SUBST),
+        _ => Err("types do not match".into()),
     }
 }
 
