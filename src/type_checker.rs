@@ -10,28 +10,28 @@ const NULL_SUBST: Subst = vec![];
 
 /// Kind of type.
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
-enum Kind {
+pub enum Kind {
     Star,
     Kfun(Box<Kind>, Box<Kind>),
 }
 
 /// Type variable.
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
-struct Tyvar {
-    id: Cow<'static, str>,
-    kind: Kind,
+pub struct Tyvar {
+    pub id: Cow<'static, str>,
+    pub kind: Kind,
 }
 
 /// Type constructor.
 #[derive(PartialEq, Eq, Debug, Clone)]
-struct Tycon {
-    id: Cow<'static, str>,
-    kind: Kind,
+pub struct Tycon {
+    pub id: Cow<'static, str>,
+    pub kind: Kind,
 }
 
 /// Type
 #[derive(PartialEq, Eq, Debug, Clone)]
-enum Type {
+pub enum Type {
     TVar(Tyvar),               // type variable
     TCon(Tycon),               // type constructor
     TAp(Box<Type>, Box<Type>), // type application
@@ -183,16 +183,16 @@ impl<T: Types> Types for Vec<T> {
 
 /// Predicate.
 #[derive(PartialEq, Eq, Debug, Clone)]
-struct Pred {
-    id: Cow<'static, str>,
-    t: Type,
+pub struct Pred {
+    pub id: Cow<'static, str>,
+    pub t: Type,
 }
 
 /// Qualifier.
 #[derive(PartialEq, Eq, Debug, Clone)]
-struct Qual<T> {
-    preds: Vec<Pred>,
-    t: T,
+pub struct Qual<T> {
+    pub preds: Vec<Pred>,
+    pub t: T,
 }
 
 impl Types for Pred {
@@ -235,20 +235,20 @@ struct Inst {
     qual: Qual<Pred>,
 }
 
-struct ClassEnv {
+pub struct ClassEnv {
     classes: BTreeMap<Cow<'static, str>, Class>,
     default_types: Vec<Type>, // default types
 }
 
 impl ClassEnv {
-    fn new(default_types: Vec<Type>) -> Self {
+    pub fn new(default_types: Vec<Type>) -> Self {
         ClassEnv {
             classes: BTreeMap::new(),
             default_types,
         }
     }
 
-    fn add_class(
+    pub fn add_class(
         &mut self,
         id: Cow<'static, str>,
         super_class: Vec<Cow<'static, str>>,
@@ -272,7 +272,7 @@ impl ClassEnv {
         Ok(())
     }
 
-    fn add_inst(&mut self, id: Cow<'static, str>, qual: Qual<Pred>) -> Result<(), DynError> {
+    pub fn add_inst(&mut self, id: Cow<'static, str>, qual: Qual<Pred>) -> Result<(), DynError> {
         if !self.classes.contains_key(&id) {
             return Err("class not defined".into());
         }
@@ -290,12 +290,56 @@ impl ClassEnv {
         Ok(())
     }
 
-    fn super_class(&self, id: &Cow<'static, str>) -> Option<&Vec<Cow<'static, str>>> {
-        self.classes.get(id).map(|c| &c.super_class)
+    fn super_class(&self, id: &Cow<'static, str>) -> Option<&[Cow<'static, str>]> {
+        self.classes.get(id).map(|c| c.super_class.as_slice())
     }
 
-    fn insts(&self, id: &Cow<'static, str>) -> Option<&Vec<Inst>> {
-        self.classes.get(id).map(|c| &c.insts)
+    fn insts(&self, id: &Cow<'static, str>) -> Option<&[Inst]> {
+        self.classes.get(id).map(|c| c.insts.as_slice())
+    }
+
+    fn by_super(&self, pred: &Pred) -> Vec<Pred> {
+        let mut result = vec![pred.clone()];
+
+        if let Some(super_classes) = self.super_class(&pred.id) {
+            for super_class in super_classes {
+                result.append(&mut self.by_super(&Pred {
+                    id: super_class.clone(),
+                    t: pred.t.clone(),
+                }));
+            }
+        }
+
+        result
+    }
+
+    fn by_inst(&self, pred: &Pred) -> Option<Vec<Pred>> {
+        for it in self.insts(&pred.id)?.iter() {
+            if let Ok(u) = type_match_pred(&it.qual.t, pred) {
+                let result = it.qual.preds.apply(&u);
+                return Some(result);
+            }
+        }
+
+        None
+    }
+
+    /// Given a particular class environment `self`,
+    /// the intention here is that `self.entail(ps, p)` will be True
+    /// if, and only if, the predicate `p` will hold
+    /// whenever all of the predicates in `ps` are satisfied.
+    fn entail(&self, ps: &[Pred], p: &Pred) -> bool {
+        if ps
+            .iter()
+            .map(|p_| self.by_super(p_))
+            .any(|ps_| ps_.contains(p))
+        {
+            true
+        } else if let Some(qs) = self.by_inst(p) {
+            qs.iter().all(|p_| self.entail(&ps, p_))
+        } else {
+            false
+        }
     }
 }
 

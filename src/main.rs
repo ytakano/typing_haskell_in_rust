@@ -1,6 +1,6 @@
 mod ast;
 mod error;
-mod type_checker;
+pub mod type_checker;
 
 fn main() {
     println!("Hello, world!");
