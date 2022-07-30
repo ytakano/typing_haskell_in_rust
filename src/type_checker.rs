@@ -2,7 +2,7 @@ use crate::error::DynError;
 use once_cell::sync::Lazy;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, LinkedList},
 };
 
 type Subst = Vec<(Tyvar, Type)>;
@@ -328,18 +328,54 @@ impl ClassEnv {
     /// the intention here is that `self.entail(ps, p)` will be True
     /// if, and only if, the predicate `p` will hold
     /// whenever all of the predicates in `ps` are satisfied.
-    fn entail(&self, ps: &[Pred], p: &Pred) -> bool {
-        if ps
-            .iter()
-            .map(|p_| self.by_super(p_))
-            .any(|ps_| ps_.contains(p))
-        {
+    fn entail(&self, ps: &mut dyn Iterator<Item = &Pred>, p: &Pred) -> bool {
+        if ps.map(|p_| self.by_super(p_)).any(|ps_| ps_.contains(p)) {
             true
         } else if let Some(qs) = self.by_inst(p) {
-            qs.iter().all(|p_| self.entail(&ps, p_))
+            qs.iter().all(|p_| self.entail(ps, p_))
         } else {
             false
         }
+    }
+
+    fn sc_entail(&self, ps: &mut dyn Iterator<Item = &Pred>, p: &Pred) -> bool {
+        ps.map(|p_| self.by_super(p_)).any(|ps_| ps_.contains(p))
+    }
+
+    fn to_hnfs(&self, ps: Vec<Pred>) -> Result<Vec<Pred>, DynError> {
+        let mut result = Vec::new();
+        for p in ps {
+            result.append(&mut self.to_hnf(p)?);
+        }
+        Ok(result)
+    }
+
+    fn to_hnf(&self, p: Pred) -> Result<Vec<Pred>, DynError> {
+        if in_hnf(&p) {
+            return Ok(vec![p]);
+        }
+
+        if let Some(inst) = self.by_inst(&p) {
+            self.to_hnfs(inst)
+        } else {
+            Err("context reduction".into())
+        }
+    }
+
+    fn simplify(&self, ps: Vec<Pred>) -> Vec<Pred> {
+        let mut result = Vec::new();
+        for i in 0..ps.len() {
+            let mut it = result.iter().chain(ps[(i + 1)..].iter());
+            if !self.sc_entail(&mut it, &ps[i]) {
+                result.push(ps[i].clone());
+            }
+        }
+        result
+    }
+
+    fn reduce(&self, ps: Vec<Pred>) -> Result<Vec<Pred>, DynError> {
+        let qs = self.to_hnfs(ps)?;
+        Ok(self.simplify(qs))
     }
 }
 
@@ -437,4 +473,17 @@ fn type_match(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
 
 fn enum_id(n: usize) -> String {
     format!("v{n}")
+}
+
+/// Check if pred.t is the head normal form.
+fn in_hnf(pred: &Pred) -> bool {
+    fn hnf(t: &Type) -> bool {
+        match t {
+            Type::TVar(_) => true,
+            Type::TCon(_) => false,
+            Type::TAp(t, _) => hnf(t),
+            Type::TGen(_) => unreachable!(),
+        }
+    }
+    hnf(&pred.t)
 }
