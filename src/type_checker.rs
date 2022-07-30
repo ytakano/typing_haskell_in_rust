@@ -2,7 +2,7 @@ use crate::error::DynError;
 use once_cell::sync::Lazy;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, BTreeSet, LinkedList},
+    collections::{BTreeMap, BTreeSet},
 };
 
 type Subst = Vec<(Tyvar, Type)>;
@@ -40,7 +40,7 @@ pub enum Type {
 
 macro_rules! def_type {
     ( $id:ident, $ty:expr) => {
-        static $id: Lazy<Type> = Lazy::new(|| {
+        pub static $id: Lazy<Type> = Lazy::new(|| {
             Type::TCon(Tycon {
                 id: $ty.into(),
                 kind: Kind::Star,
@@ -56,14 +56,14 @@ def_type!(TINTEGER, "Integer");
 def_type!(TFOLAT, "Float");
 def_type!(TDOUBLE, "Double");
 
-static TLIST: Lazy<Type> = Lazy::new(|| {
+pub static TLIST: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "[]".into(),
         kind: Kind::Kfun(Box::new(Kind::Star), Box::new(Kind::Star)),
     })
 });
 
-static TARROW: Lazy<Type> = Lazy::new(|| {
+pub static TARROW: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "(->)".into(),
         kind: Kind::Kfun(
@@ -73,7 +73,7 @@ static TARROW: Lazy<Type> = Lazy::new(|| {
     })
 });
 
-static TTUPLE2: Lazy<Type> = Lazy::new(|| {
+pub static TTUPLE2: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "(,)".into(),
         kind: Kind::Kfun(
@@ -83,18 +83,18 @@ static TTUPLE2: Lazy<Type> = Lazy::new(|| {
     })
 });
 
-fn mk_fn(a: Type, b: Type) -> Type {
+pub fn mk_fn(a: Type, b: Type) -> Type {
     Type::TAp(
         Box::new(TARROW.clone()),
         Box::new(Type::TAp(Box::new(a), Box::new(b))),
     )
 }
 
-fn mk_list(a: Type) -> Type {
+pub fn mk_list(a: Type) -> Type {
     Type::TAp(Box::new(TLIST.clone()), Box::new(a))
 }
 
-fn mk_pair(a: Type, b: Type) -> Type {
+pub fn mk_pair(a: Type, b: Type) -> Type {
     Type::TAp(
         Box::new(Type::TAp(Box::new(TTUPLE2.clone()), Box::new(a))),
         Box::new(b),
@@ -225,12 +225,14 @@ impl<T: Types> Types for Qual<T> {
 }
 
 /// Type class.
+#[derive(PartialEq, Eq, Debug, Clone)]
 struct Class {
     super_class: Vec<Cow<'static, str>>,
     insts: Vec<Inst>,
 }
 
 /// Instance.
+#[derive(PartialEq, Eq, Debug, Clone)]
 struct Inst {
     qual: Qual<Pred>,
 }
@@ -248,6 +250,23 @@ impl ClassEnv {
         }
     }
 
+    /// Add a type class.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // added type classes
+    /// trait Eq {}
+    /// trait Ord : Eq {}
+    /// ```
+    ///
+    /// ```
+    /// use typing_haskell_in_rust::type_checker::*;
+    ///
+    /// let mut env = ClassEnv::new(vec![]);
+    /// env.add_class("Eq".into(), vec![]);
+    /// env.add_class("Ord".into(), vec!["Eq".into()]);
+    /// ```
     pub fn add_class(
         &mut self,
         id: Cow<'static, str>,
@@ -272,20 +291,44 @@ impl ClassEnv {
         Ok(())
     }
 
-    pub fn add_inst(&mut self, id: Cow<'static, str>, qual: Qual<Pred>) -> Result<(), DynError> {
-        if !self.classes.contains_key(&id) {
-            return Err("class not defined".into());
+    /// Add an instance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // trait Eq {}        // type class
+    /// // struct Int {}      // type
+    /// // impl Eq for Int {} // instance
+    ///
+    /// // add `Eq` class
+    /// let mut env = ClassEnv::new(vec![]);
+    /// env.add_class("Eq".into(), vec![]).unwrap();
+    ///
+    /// // add a instance of `Eq` for `Int`
+    /// let eq_int = Pred {
+    ///     id: "Eq".into(),
+    ///     t: TINT.clone(),
+    /// };
+    /// env.add_inst(vec![], eq_int).unwrap();
+    /// ```
+    pub fn add_inst(&mut self, ps: Vec<Pred>, p: Pred) -> Result<(), DynError> {
+        if !self.classes.contains_key(&p.id) {
+            return Err("no class for instance".into());
         }
 
-        fn overlap(p1: &Pred, p2: &Pred) -> bool {
-            mgu_pred(p1, p2).is_ok()
+        fn overlap(p: &Pred, q: &Pred) -> bool {
+            mgu_pred(p, q).is_ok()
         }
 
-        if qual.preds.iter().any(|p| overlap(&qual.t, p)) {
-            return Err("overlapping instance".into());
+        if let Some(its) = self.insts(&p.id) {
+            if its.iter().any(|inst| overlap(&p, &inst.qual.t)) {
+                return Err("instance already defined".into());
+            }
         }
 
-        self.classes.get_mut(&id).unwrap().insts.push(Inst { qual });
+        self.classes.get_mut(&p.id).unwrap().insts.push(Inst {
+            qual: Qual { preds: ps, t: p },
+        });
 
         Ok(())
     }
@@ -294,6 +337,7 @@ impl ClassEnv {
         self.classes.get(id).map(|c| c.super_class.as_slice())
     }
 
+    /// Get instances of a class.
     fn insts(&self, id: &Cow<'static, str>) -> Option<&[Inst]> {
         self.classes.get(id).map(|c| c.insts.as_slice())
     }
@@ -486,4 +530,31 @@ fn in_hnf(pred: &Pred) -> bool {
         }
     }
     hnf(&pred.t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_insts() {
+        // trait Eq {}        // type class
+        // struct Int {}      // type
+        // impl Eq for Int {} // instance
+
+        // add `Eq` class
+        let mut env = ClassEnv::new(vec![]);
+        env.add_class("Eq".into(), vec![]).unwrap();
+
+        // add a instance of `Eq` for `Int`
+        let eq_int = Pred {
+            id: "Eq".into(),
+            t: TINT.clone(),
+        };
+        env.add_inst(vec![], eq_int).unwrap();
+
+        // get the instances of `Eq`
+        let eq_insts = env.insts(&"Eq".into()).unwrap();
+        eprintln!("{:?}", eq_insts);
+    }
 }
