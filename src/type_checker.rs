@@ -29,7 +29,7 @@ pub struct Tycon {
     pub kind: Kind,
 }
 
-/// Type
+/// Type.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Type {
     TVar(Tyvar),               // type variable
@@ -255,12 +255,10 @@ impl ClassEnv {
     /// # Examples
     ///
     /// ```
-    /// // added type classes
-    /// trait Eq {}
-    /// trait Ord : Eq {}
-    /// ```
+    /// // Add type classes as follows.
+    /// // trait Eq {}
+    /// // trait Ord : Eq {}
     ///
-    /// ```
     /// use typing_haskell_in_rust::type_checker::*;
     ///
     /// let mut env = ClassEnv::new(vec![]);
@@ -296,9 +294,12 @@ impl ClassEnv {
     /// # Examples
     ///
     /// ```
+    /// // Add an instance as follows.
     /// // trait Eq {}        // type class
     /// // struct Int {}      // type
     /// // impl Eq for Int {} // instance
+    ///
+    /// use typing_haskell_in_rust::type_checker::*;
     ///
     /// // add `Eq` class
     /// let mut env = ClassEnv::new(vec![]);
@@ -420,6 +421,67 @@ impl ClassEnv {
     fn reduce(&self, ps: Vec<Pred>) -> Result<Vec<Pred>, DynError> {
         let qs = self.to_hnfs(ps)?;
         Ok(self.simplify(qs))
+    }
+}
+
+/// Type schemes are used to describe polymorphic types,
+/// and are represented using a list of kinds and a qualified type
+///
+/// In a type scheme `Scheme { kind, qt }`,  each type of the form
+/// `Type::TGen(n)` that appears in the qualified type `qt`
+/// represents a generic, or universally quantified type variable
+/// whose kind is given by `ks[n]`.
+///
+/// This is the only place where we will allow `Type::TGen` values to appear in a type.
+struct Scheme {
+    kind: Vec<Kind>,
+    qt: Qual<Type>,
+}
+
+impl Types for Scheme {
+    fn apply(&self, subst: &Subst) -> Scheme {
+        Scheme {
+            kind: self.kind.clone(),
+            qt: self.qt.apply(subst),
+        }
+    }
+
+    fn tv(&self) -> BTreeSet<Tyvar> {
+        self.qt.tv()
+    }
+}
+
+/// Type schemes are constructed by quantifying a qualified type `qt`
+/// with respect to a list of type variables `vs`.
+///
+/// Note that the order of the kinds in `ks` is determined by the order
+/// in which the variables `v` appear in `qt.tv()`,
+/// and not by the order in which they appear in `vs`.
+/// So, for example, the leftmost quantified variable
+/// in a type scheme will always be represented by `Type::TGen(0)`.
+fn quantify(vs: &[Tyvar], qt: Qual<Type>) -> Scheme {
+    let vs = qt.tv().into_iter().filter(|v| vs.contains(v));
+
+    let mut subst = Subst::new();
+    for (i, v) in vs.enumerate() {
+        subst.push((v, Type::TGen(i)));
+    }
+
+    let kind: Vec<_> = subst.iter().map(|(v, _)| v.kind.clone()).collect();
+
+    Scheme {
+        kind,
+        qt: qt.apply(&subst),
+    }
+}
+
+fn to_scheme(t: &Type) -> Scheme {
+    Scheme {
+        kind: vec![],
+        qt: Qual {
+            preds: vec![],
+            t: t.clone(),
+        },
     }
 }
 
@@ -556,5 +618,17 @@ mod tests {
         // get the instances of `Eq`
         let eq_insts = env.insts(&"Eq".into()).unwrap();
         eprintln!("{:?}", eq_insts);
+
+        let expected = vec![Inst {
+            qual: Qual {
+                preds: Vec::new(),
+                t: Pred {
+                    id: "Eq".into(),
+                    t: TINT.clone(),
+                },
+            },
+        }];
+
+        assert_eq!(eq_insts, expected);
     }
 }
