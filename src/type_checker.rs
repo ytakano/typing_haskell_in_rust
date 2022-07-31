@@ -433,6 +433,7 @@ impl ClassEnv {
 /// whose kind is given by `ks[n]`.
 ///
 /// This is the only place where we will allow `Type::TGen` values to appear in a type.
+#[derive(PartialEq, Eq, Debug, Clone)]
 struct Scheme {
     kind: Vec<Kind>,
     qt: Qual<Type>,
@@ -449,6 +450,37 @@ impl Types for Scheme {
     fn tv(&self) -> BTreeSet<Tyvar> {
         self.qt.tv()
     }
+}
+
+/// Assumptions about the type of a variable are represented by values of the `Assump` datatype,
+/// each of which pairs a variable name with a type scheme.
+#[derive(PartialEq, Eq, Debug, Clone)]
+struct Assump {
+    id: Cow<'static, str>,
+    scheme: Scheme,
+}
+
+impl Types for Assump {
+    fn apply(&self, subst: &Subst) -> Self {
+        Assump {
+            id: self.id.clone(),
+            scheme: self.scheme.apply(subst),
+        }
+    }
+
+    fn tv(&self) -> BTreeSet<Tyvar> {
+        self.scheme.tv()
+    }
+}
+
+fn find(id: &str, assumps: &[Assump]) -> Result<Scheme, DynError> {
+    for assump in assumps {
+        if assump.id == id {
+            return Ok(assump.scheme.clone());
+        }
+    }
+
+    Err("unbound identifier".into())
 }
 
 /// Type schemes are constructed by quantifying a qualified type `qt`
