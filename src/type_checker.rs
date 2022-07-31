@@ -1,4 +1,4 @@
-use crate::error::DynError;
+use crate::{ast::Literal, error::DynError};
 use once_cell::sync::Lazy;
 use std::{
     borrow::Cow,
@@ -49,21 +49,22 @@ macro_rules! def_type {
     };
 }
 
-def_type!(TUNIT, "Unit");
-def_type!(TCHAR, "Char");
-def_type!(TINT, "Int");
-def_type!(TINTEGER, "Integer");
-def_type!(TFOLAT, "Float");
-def_type!(TDOUBLE, "Double");
+def_type!(T_UNIT, "Unit");
+def_type!(T_CHAR, "Char");
+def_type!(T_BOOL, "Bool");
+def_type!(T_INT, "Int");
+def_type!(T_INTEGER, "Integer");
+def_type!(T_FOLAT, "Float");
+def_type!(T_DOUBLE, "Double");
 
-pub static TLIST: Lazy<Type> = Lazy::new(|| {
+pub static T_LIST: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "[]".into(),
         kind: Kind::Kfun(Box::new(Kind::Star), Box::new(Kind::Star)),
     })
 });
 
-pub static TARROW: Lazy<Type> = Lazy::new(|| {
+pub static T_ARROW: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "(->)".into(),
         kind: Kind::Kfun(
@@ -73,7 +74,7 @@ pub static TARROW: Lazy<Type> = Lazy::new(|| {
     })
 });
 
-pub static TTUPLE2: Lazy<Type> = Lazy::new(|| {
+pub static T_TUPLE2: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "(,)".into(),
         kind: Kind::Kfun(
@@ -85,18 +86,18 @@ pub static TTUPLE2: Lazy<Type> = Lazy::new(|| {
 
 pub fn mk_fn(a: Type, b: Type) -> Type {
     Type::TAp(
-        Box::new(TARROW.clone()),
+        Box::new(T_ARROW.clone()),
         Box::new(Type::TAp(Box::new(a), Box::new(b))),
     )
 }
 
 pub fn mk_list(a: Type) -> Type {
-    Type::TAp(Box::new(TLIST.clone()), Box::new(a))
+    Type::TAp(Box::new(T_LIST.clone()), Box::new(a))
 }
 
 pub fn mk_pair(a: Type, b: Type) -> Type {
     Type::TAp(
-        Box::new(Type::TAp(Box::new(TTUPLE2.clone()), Box::new(a))),
+        Box::new(Type::TAp(Box::new(T_TUPLE2.clone()), Box::new(a))),
         Box::new(b),
     )
 }
@@ -186,6 +187,12 @@ impl<T: Types> Types for Vec<T> {
 pub struct Pred {
     pub id: Cow<'static, str>,
     pub t: Type,
+}
+
+impl Pred {
+    fn new(id: Cow<'static, str>, t: Type) -> Self {
+        Pred { id, t }
+    }
 }
 
 /// Qualifier.
@@ -334,6 +341,39 @@ impl ClassEnv {
         Ok(())
     }
 
+    pub fn add_basic_classes_of_haskell(&mut self) {
+        // core classes
+        self.add_class("Eq".into(), Vec::new()).unwrap();
+        self.add_class("Ord".into(), vec!["Eq".into()]).unwrap();
+        self.add_class("Show".into(), vec![]).unwrap();
+        self.add_class("Read".into(), vec![]).unwrap();
+        self.add_class("Bounded".into(), vec![]).unwrap();
+        self.add_class("Enum".into(), vec![]).unwrap();
+        self.add_class("Functor".into(), vec![]).unwrap();
+        self.add_class("Applicative".into(), vec!["Functor".into()])
+            .unwrap();
+        self.add_class("Monad".into(), vec!["Applicative".into()])
+            .unwrap();
+
+        // numeric classes
+        self.add_class("Num".into(), vec![]).unwrap();
+        self.add_class("Real".into(), vec!["Num".into(), "Ord".into()])
+            .unwrap();
+        self.add_class("Fractional".into(), vec!["Num".into()])
+            .unwrap();
+        self.add_class("Integral".into(), vec!["Real".into(), "Enum".into()])
+            .unwrap();
+        self.add_class("RealFrac".into(), vec!["Real".into(), "Fractional".into()])
+            .unwrap();
+        self.add_class("Floating".into(), vec!["Fractional".into()])
+            .unwrap();
+        self.add_class(
+            "RealFloat".into(),
+            vec!["RealFrac".into(), "Floating".into()],
+        )
+        .unwrap();
+    }
+
     fn super_class(&self, id: &Cow<'static, str>) -> Option<&[Cow<'static, str>]> {
         self.classes.get(id).map(|c| c.super_class.as_slice())
     }
@@ -455,7 +495,7 @@ impl Types for Scheme {
 /// Assumptions about the type of a variable are represented by values of the `Assump` datatype,
 /// each of which pairs a variable name with a type scheme.
 #[derive(PartialEq, Eq, Debug, Clone)]
-struct Assump {
+pub struct Assump {
     id: Cow<'static, str>,
     scheme: Scheme,
 }
@@ -481,6 +521,116 @@ fn find(id: &str, assumps: &[Assump]) -> Result<Scheme, DynError> {
     }
 
     Err("unbound identifier".into())
+}
+
+#[derive(Debug)]
+struct TypeInfer {
+    subst: Subst,
+    n: usize,
+}
+
+impl TypeInfer {
+    fn new() -> Self {
+        TypeInfer {
+            subst: Subst::new(),
+            n: 0,
+        }
+    }
+
+    fn unify(&mut self, t1: &Type, t2: &Type) -> Result<(), DynError> {
+        let t1 = t1.apply(&self.subst);
+        let t2 = t2.apply(&self.subst);
+        let u = mgu(&t1, &t2)?;
+
+        self.subst = compose(&u, &self.subst);
+
+        Ok(())
+    }
+
+    fn new_tvar(&mut self, kind: Kind) -> Type {
+        let id = enum_id(self.n);
+        self.n += 1;
+        Type::TVar(Tyvar {
+            id: id.into(),
+            kind,
+        })
+    }
+
+    fn fresh_inst(&mut self, scheme: &Scheme) -> Qual<Type> {
+        let ts: Vec<_> = scheme
+            .kind
+            .iter()
+            .map(|k| self.new_tvar(k.clone()))
+            .collect();
+        scheme.qt.inst(&ts)
+    }
+
+    fn ti_lit(&mut self, lit: &Literal) -> Result<(Vec<Pred>, Type), DynError> {
+        match lit {
+            Literal::Bool(_) => Ok((vec![], T_BOOL.clone())),
+            Literal::Char(_) => Ok((vec![], T_CHAR.clone())),
+            Literal::Int(_) => {
+                let v = self.new_tvar(Kind::Star);
+                Ok((
+                    vec![
+                        Pred::new("Integral".into(), v.clone()),
+                        Pred::new("Eq".into(), v.clone()),
+                        Pred::new("Show".into(), v.clone()),
+                    ],
+                    v,
+                ))
+            }
+            Literal::Float(_) => {
+                let v = self.new_tvar(Kind::Star);
+                Ok((
+                    vec![
+                        Pred::new("RealFrac".into(), v.clone()),
+                        Pred::new("Show".into(), v.clone()),
+                    ],
+                    v,
+                ))
+            }
+            Literal::Str(_) => Ok((vec![], mk_list(T_CHAR.clone()))),
+        }
+    }
+}
+
+trait Instantiate {
+    fn inst(&self, types: &[Type]) -> Self;
+}
+
+impl Instantiate for Type {
+    fn inst(&self, types: &[Type]) -> Self {
+        match self {
+            Type::TAp(l, r) => Type::TAp(Box::new(l.inst(types)), Box::new(r.inst(types))),
+            Type::TGen(n) => types[*n].clone(),
+            t => t.clone(),
+        }
+    }
+}
+
+impl<T: Instantiate> Instantiate for Vec<T> {
+    fn inst(&self, types: &[Type]) -> Self {
+        self.iter().map(|t| t.inst(types)).collect()
+    }
+}
+
+impl<T: Instantiate> Instantiate for Qual<T> {
+    fn inst(&self, types: &[Type]) -> Self {
+        Qual {
+            preds: self.preds.inst(types),
+            t: self.t.inst(types),
+        }
+    }
+}
+
+impl Instantiate for Pred {
+    fn inst(&self, types: &[Type]) -> Self {
+        Pred {
+            id: self.id.clone(),
+            t: self.t.inst(types),
+        }
+    }
 }
 
 /// Type schemes are constructed by quantifying a qualified type `qt`
@@ -643,7 +793,7 @@ mod tests {
         // add a instance of `Eq` for `Int`
         let eq_int = Pred {
             id: "Eq".into(),
-            t: TINT.clone(),
+            t: T_INT.clone(),
         };
         env.add_inst(vec![], eq_int).unwrap();
 
@@ -656,7 +806,7 @@ mod tests {
                 preds: Vec::new(),
                 t: Pred {
                     id: "Eq".into(),
-                    t: TINT.clone(),
+                    t: T_INT.clone(),
                 },
             },
         }];
