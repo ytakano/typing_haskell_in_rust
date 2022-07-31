@@ -1,4 +1,4 @@
-use crate::type_checker::Assump;
+use crate::type_infer::Assump;
 
 pub enum Literal {
     Int(num::BigInt),
