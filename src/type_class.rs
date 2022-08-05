@@ -37,7 +37,7 @@ impl ClassEnv {
     /// // trait Eq {}
     /// // trait Ord : Eq {}
     ///
-    /// use typing_haskell_in_rust::type_checker::*;
+    /// use typing_haskell_in_rust::type_class::ClassEnv;
     ///
     /// let mut env = ClassEnv::new(vec![]);
     /// env.add_class("Eq".into(), vec![]);
@@ -77,7 +77,7 @@ impl ClassEnv {
     /// // struct Int {}      // type
     /// // impl Eq for Int {} // instance
     ///
-    /// use typing_haskell_in_rust::type_checker::*;
+    /// use typing_haskell_in_rust::{type_class::ClassEnv, predicate::Pred, types::T_INT};
     ///
     /// // add `Eq` class
     /// let mut env = ClassEnv::new(vec![]);
@@ -86,7 +86,7 @@ impl ClassEnv {
     /// // add a instance of `Eq` for `Int`
     /// let eq_int = Pred {
     ///     id: "Eq".into(),
-    ///     t: TINT.clone(),
+    ///     t: T_INT.clone(),
     /// };
     /// env.add_inst(vec![], eq_int).unwrap();
     /// ```
@@ -112,39 +112,6 @@ impl ClassEnv {
             .push(Inst { preds: ps, t: p });
 
         Ok(())
-    }
-
-    pub fn add_basic_classes_of_haskell(&mut self) {
-        // core classes
-        self.add_class("Eq".into(), Vec::new()).unwrap();
-        self.add_class("Ord".into(), vec!["Eq".into()]).unwrap();
-        self.add_class("Show".into(), vec![]).unwrap();
-        self.add_class("Read".into(), vec![]).unwrap();
-        self.add_class("Bounded".into(), vec![]).unwrap();
-        self.add_class("Enum".into(), vec![]).unwrap();
-        self.add_class("Functor".into(), vec![]).unwrap();
-        self.add_class("Applicative".into(), vec!["Functor".into()])
-            .unwrap();
-        self.add_class("Monad".into(), vec!["Applicative".into()])
-            .unwrap();
-
-        // numeric classes
-        self.add_class("Num".into(), vec![]).unwrap();
-        self.add_class("Real".into(), vec!["Num".into(), "Ord".into()])
-            .unwrap();
-        self.add_class("Fractional".into(), vec!["Num".into()])
-            .unwrap();
-        self.add_class("Integral".into(), vec!["Real".into(), "Enum".into()])
-            .unwrap();
-        self.add_class("RealFrac".into(), vec!["Real".into(), "Fractional".into()])
-            .unwrap();
-        self.add_class("Floating".into(), vec!["Fractional".into()])
-            .unwrap();
-        self.add_class(
-            "RealFloat".into(),
-            vec!["RealFrac".into(), "Floating".into()],
-        )
-        .unwrap();
     }
 
     fn super_class(&self, id: &Cow<'static, str>) -> Option<&[Cow<'static, str>]> {

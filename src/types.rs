@@ -100,6 +100,10 @@ pub fn mk_pair(a: Type, b: Type) -> Type {
     )
 }
 
+pub fn mk_tvar(id: Cow<'static, str>, kind: Kind) -> Type {
+    Type::TVar(Tyvar { id, kind })
+}
+
 pub(crate) trait HasKind {
     fn kind(&self) -> Kind;
 }
