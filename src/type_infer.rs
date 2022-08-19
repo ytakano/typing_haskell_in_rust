@@ -1,10 +1,10 @@
 use crate::{
-    ast::Literal,
+    ast::{Literal, Pat},
     error::DynError,
     predicate::{Pred, Qual},
     types::*,
 };
-use std::{borrow::Cow, collections::BTreeSet};
+use std::{borrow::Cow, collections::BTreeSet, ops::ControlFlow};
 
 /// Type schemes are used to describe polymorphic types,
 /// and are represented using a list of kinds and a qualified type
@@ -113,26 +113,88 @@ impl TypeInfer {
             Literal::Char(_) => Ok((vec![], T_CHAR.clone())),
             Literal::Int(_) => {
                 let v = self.new_tvar(Kind::Star);
-                Ok((
-                    vec![
-                        Pred::new("Integral".into(), v.clone()),
-                        Pred::new("Eq".into(), v.clone()),
-                        Pred::new("Show".into(), v.clone()),
-                    ],
-                    v,
-                ))
+                Ok((vec![Pred::new("Integral".into(), v.clone())], v))
             }
             Literal::Float(_) => {
                 let v = self.new_tvar(Kind::Star);
+                Ok((vec![Pred::new("RealFloat".into(), v.clone())], v))
+            }
+            Literal::Str(_) => Ok((vec![], mk_list(T_CHAR.clone()))),
+        }
+    }
+
+    fn ti_pat(&mut self, pat: &Pat) -> Result<(Vec<Pred>, Vec<Assump>, Type), DynError> {
+        match pat {
+            Pat::Var(i) => {
+                let v = self.new_tvar(Kind::Star);
                 Ok((
-                    vec![
-                        Pred::new("RealFrac".into(), v.clone()),
-                        Pred::new("Show".into(), v.clone()),
-                    ],
+                    Vec::new(),
+                    vec![Assump {
+                        id: i.clone().into(),
+                        scheme: to_scheme(&v),
+                    }],
                     v,
                 ))
             }
-            Literal::Str(_) => Ok((vec![], mk_list(T_CHAR.clone()))),
+            Pat::Wildcard => {
+                let v = self.new_tvar(Kind::Star);
+                Ok((Vec::new(), Vec::new(), v))
+            }
+            Pat::Lit(l) => {
+                let (ps, t) = self.ti_lit(l)?;
+                Ok((ps, Vec::new(), t))
+            }
+            Pat::As { id, pat } => {
+                let (ps, mut assump, t) = self.ti_pat(pat)?;
+                let mut new_assump = vec![Assump {
+                    id: id.clone().into(),
+                    scheme: to_scheme(&t),
+                }];
+                new_assump.append(&mut assump);
+                Ok((ps, new_assump, t))
+            }
+            Pat::Con {
+                assump: Assump { id: _, scheme },
+                pat,
+            } => {
+                let (mut ps, assump, ts) = self.ti_pats(pat)?;
+                let tv = self.new_tvar(Kind::Star);
+                let Qual { mut preds, t } = self.fresh_inst(scheme);
+                let t2 = ts
+                    .iter()
+                    .rev()
+                    .fold(tv.clone(), |acc, t| mk_fn(acc, t.clone()));
+
+                self.unify(&t, &t2)?;
+                ps.append(&mut preds);
+
+                Ok((ps, assump, tv))
+            }
+        }
+    }
+
+    fn ti_pats(&mut self, pats: &[Pat]) -> Result<(Vec<Pred>, Vec<Assump>, Vec<Type>), DynError> {
+        let mut ps = Vec::new();
+        let mut assump = Vec::new();
+        let mut ts = Vec::new();
+
+        let result = pats
+            .iter()
+            .map(|pat| self.ti_pat(pat))
+            .try_for_each(|result| match result {
+                Ok((mut ps_, mut assump_, t)) => {
+                    ps.append(&mut ps_);
+                    assump.append(&mut assump_);
+                    ts.push(t);
+                    ControlFlow::Continue(())
+                }
+                Err(e) => ControlFlow::Break(e),
+            });
+
+        if let ControlFlow::Break(e) = result {
+            Err(e)
+        } else {
+            Ok((ps, assump, ts))
         }
     }
 }
