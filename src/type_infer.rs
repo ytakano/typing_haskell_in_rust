@@ -2,9 +2,14 @@ use crate::{
     ast::{Literal, Pat},
     error::DynError,
     predicate::{Pred, Qual},
+    type_class::ClassEnv,
     types::*,
 };
-use std::{borrow::Cow, collections::BTreeSet, ops::ControlFlow};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+    ops::ControlFlow,
+};
 
 /// Type schemes are used to describe polymorphic types,
 /// and are represented using a list of kinds and a qualified type
@@ -38,8 +43,8 @@ impl Types for Scheme {
 /// each of which pairs a variable name with a type scheme.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Assump {
-    id: Cow<'static, str>,
-    scheme: Scheme,
+    id: Cow<'static, str>, // variable name
+    scheme: Scheme,        // type scheme
 }
 
 impl Types for Assump {
@@ -63,6 +68,49 @@ fn find(id: &str, assumps: &[Assump]) -> Result<Scheme, DynError> {
     }
 
     Err("unbound identifier".into())
+}
+
+pub struct Ambiguity {
+    tyvar: Tyvar,
+    preds: Vec<Pred>,
+}
+
+fn ambiguities(ce: &ClassEnv, vs: &[Tyvar], ps: &Vec<Pred>) -> Vec<Ambiguity> {
+    let mut multiset = BTreeMap::new();
+    vs.iter().for_each(|t| {
+        if let Some(val) = multiset.get_mut(t) {
+            *val += 1;
+        } else {
+            multiset.insert(t.clone(), 1);
+        }
+    });
+
+    let mut result = Vec::new();
+
+    ps.tv()
+        .into_iter()
+        .filter(|t| {
+            if let Some(val) = multiset.get_mut(t) {
+                *val -= 1;
+                if *val == 0 {
+                    multiset.remove(t);
+                }
+                true
+            } else {
+                false
+            }
+        })
+        .for_each(|tyvar| {
+            let preds = ps
+                .iter()
+                .filter(|p| p.tv().contains(&tyvar))
+                .map(|p| p.clone())
+                .collect();
+            let ambiguity = Ambiguity { tyvar, preds };
+            result.push(ambiguity)
+        });
+
+    result
 }
 
 #[derive(Debug)]
@@ -163,7 +211,7 @@ impl TypeInfer {
                 let t2 = ts
                     .iter()
                     .rev()
-                    .fold(tv.clone(), |acc, t| mk_fn(acc, t.clone()));
+                    .fold(tv.clone(), |acc, t| mk_fn(t.clone(), acc));
 
                 self.unify(&t, &t2)?;
                 ps.append(&mut preds);
@@ -196,6 +244,22 @@ impl TypeInfer {
         } else {
             Ok((ps, assump, ts))
         }
+    }
+
+    fn split(
+        &mut self,
+        ce: &ClassEnv,
+        fs: &[Tyvar], // The set of ‘fixed’ variables, which are just the variables appearing free in the assumptions.
+        gs: &[Tyvar], // The set of variables over which we would like to quantify.
+        ps: Vec<Pred>,
+    ) -> Result<(Vec<Pred>, Vec<Pred>), DynError> {
+        let ps = ce.reduce(ps)?;
+        let (ds, rs): (Vec<_>, Vec<_>) = ps
+            .into_iter()
+            .partition(|p| p.tv().iter().all(|t| fs.contains(t)));
+        // TODO: defaultedPreds
+
+        Ok((ds, rs))
     }
 }
 

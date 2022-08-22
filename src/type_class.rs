@@ -198,7 +198,7 @@ impl ClassEnv {
         result
     }
 
-    fn reduce(&self, ps: Vec<Pred>) -> Result<Vec<Pred>, DynError> {
+    pub(crate) fn reduce(&self, ps: Vec<Pred>) -> Result<Vec<Pred>, DynError> {
         let qs = self.to_hnfs(ps)?;
         Ok(self.simplify(qs))
     }

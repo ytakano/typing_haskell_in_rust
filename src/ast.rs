@@ -22,3 +22,12 @@ pub enum Expr {
     Ap(Box<Expr>, Box<Expr>),
     // BindGroup
 }
+
+/// Function bindings.
+/// An `Alt` specifies the left and right hand sides of a function definition.
+/// With a more complete syntax for `Expr`, values of type `Alt` might also be used
+/// in the representation of lambda and case expressions.
+pub struct Alt {
+    pats: Vec<Pat>,
+    expr: Expr,
+}

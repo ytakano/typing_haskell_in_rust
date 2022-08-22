@@ -84,8 +84,8 @@ pub static T_TUPLE2: Lazy<Type> = Lazy::new(|| {
 
 pub fn mk_fn(a: Type, b: Type) -> Type {
     Type::TAp(
-        Box::new(T_ARROW.clone()),
-        Box::new(Type::TAp(Box::new(a), Box::new(b))),
+        Box::new(Type::TAp(Box::new(T_ARROW.clone()), Box::new(a))),
+        Box::new(b),
     )
 }
 
