@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Literal, Pat},
+    ast::{Expr, Literal, Pat},
     error::DynError,
     predicate::{Pred, Qual},
     type_class::ClassEnv,
@@ -21,7 +21,7 @@ use std::{
 ///
 /// This is the only place where we will allow `Type::TGen` values to appear in a type.
 #[derive(PartialEq, Eq, Debug, Clone)]
-struct Scheme {
+pub struct Scheme {
     kind: Vec<Kind>,
     qt: Qual<Type>,
 }
@@ -244,6 +244,10 @@ impl TypeInfer {
         } else {
             Ok((ps, assump, ts))
         }
+    }
+
+    fn ti_expr(ce: &ClassEnv, assump: &Assump, expr: &Expr) -> Result<(Vec<Pred>, Type), DynError> {
+        todo!()
     }
 
     fn split(
