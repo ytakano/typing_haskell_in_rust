@@ -246,8 +246,40 @@ impl TypeInfer {
         }
     }
 
-    fn ti_expr(ce: &ClassEnv, assump: &Assump, expr: &Expr) -> Result<(Vec<Pred>, Type), DynError> {
-        todo!()
+    fn ti_expr(
+        &mut self,
+        ce: &ClassEnv,
+        assumps: &[Assump],
+        expr: &Expr,
+    ) -> Result<(Vec<Pred>, Type), DynError> {
+        match expr {
+            Expr::Var(id) => {
+                let sc = find(id, assumps)?;
+                let inst = self.fresh_inst(&sc);
+                Ok((inst.preds.clone(), inst.t.clone()))
+            }
+            Expr::Const(assump) => {
+                let inst = self.fresh_inst(&assump.scheme);
+                Ok((inst.preds.clone(), inst.t.clone()))
+            }
+            Expr::Lit(l) => self.ti_lit(l),
+            Expr::Ap(e, f) => {
+                let (mut ps, te) = self.ti_expr(ce, assumps, e)?;
+                let (mut qs, tf) = self.ti_expr(ce, assumps, f)?;
+
+                let t = self.new_tvar(Kind::Star);
+                let fn_type = mk_fn(tf, t.clone());
+
+                self.unify(&fn_type, &te)?;
+                ps.append(&mut qs);
+
+                Ok((ps, t))
+            }
+            Expr::Let(bg, e) => {
+                // TODO: ti_bind_group
+                todo!()
+            }
+        }
     }
 
     fn split(

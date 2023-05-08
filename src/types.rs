@@ -82,6 +82,7 @@ pub static T_TUPLE2: Lazy<Type> = Lazy::new(|| {
     })
 });
 
+/// Make a function type of `a -> b`.
 pub fn mk_fn(a: Type, b: Type) -> Type {
     Type::TAp(
         Box::new(Type::TAp(Box::new(T_ARROW.clone()), Box::new(a))),
