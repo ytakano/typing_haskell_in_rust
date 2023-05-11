@@ -17,7 +17,7 @@ pub(crate) type Inst = Qual<Pred>;
 
 pub struct ClassEnv {
     classes: BTreeMap<Cow<'static, str>, Class>,
-    default_types: Vec<Type>, // default types
+    pub(crate) default_types: Vec<Type>, // default types
 }
 
 impl ClassEnv {
@@ -153,7 +153,7 @@ impl ClassEnv {
     /// the intention here is that `self.entail(ps, p)` will be True
     /// if, and only if, the predicate `p` will hold
     /// whenever all of the predicates in `ps` are satisfied.
-    fn entail(&self, ps: &mut dyn Iterator<Item = &Pred>, p: &Pred) -> bool {
+    pub(crate) fn entail(&self, ps: &mut dyn Iterator<Item = &Pred>, p: &Pred) -> bool {
         if ps.map(|p_| self.by_super(p_)).any(|ps_| ps_.contains(p)) {
             true
         } else if let Some(qs) = self.by_inst(p) {

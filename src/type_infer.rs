@@ -5,11 +5,7 @@ use crate::{
     type_class::ClassEnv,
     types::*,
 };
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
-    ops::ControlFlow,
-};
+use std::{borrow::Cow, collections::BTreeSet, ops::ControlFlow};
 
 /// Type schemes are used to describe polymorphic types,
 /// and are represented using a list of kinds and a qualified type
@@ -75,31 +71,52 @@ pub struct Ambiguity {
     preds: Vec<Pred>,
 }
 
-fn ambiguities(ce: &ClassEnv, vs: &[Tyvar], ps: &Vec<Pred>) -> Vec<Ambiguity> {
-    let mut multiset = BTreeMap::new();
-    vs.iter().for_each(|t| {
-        if let Some(val) = multiset.get_mut(t) {
-            *val += 1;
-        } else {
-            multiset.insert(t.clone(), 1);
-        }
-    });
+impl Ambiguity {
+    fn candidates(
+        &self,
+        ce: &ClassEnv,
+        num_classes: &[Cow<str>],
+        std_classes: &[Cow<str>],
+    ) -> Vec<Type> {
+        let mut result = Vec::new();
 
+        let is = self.preds.iter().map(|n| &n.id);
+        let mut ts = self.preds.iter().map(|n| &n.t);
+
+        let v = Type::TVar(self.tyvar.clone());
+        let ref_v = &v;
+
+        if ts.all(|t| *t == *ref_v)
+            && is.clone().any(|i| num_classes.contains(i))
+            && is.clone().all(|i| std_classes.contains(i))
+        {
+            for t in ce.default_types.iter() {
+                if is
+                    .clone()
+                    .map(|i| Pred {
+                        id: i.clone(),
+                        t: t.clone(),
+                    })
+                    .all(|pred| {
+                        let empty = Vec::new();
+                        ce.entail(&mut empty.iter(), &pred)
+                    })
+                {
+                    result.push(t.clone());
+                }
+            }
+        }
+
+        result
+    }
+}
+
+fn ambiguities(ce: &ClassEnv, vs: &[Tyvar], ps: &Vec<Pred>) -> Vec<Ambiguity> {
     let mut result = Vec::new();
 
     ps.tv()
         .into_iter()
-        .filter(|t| {
-            if let Some(val) = multiset.get_mut(t) {
-                *val -= 1;
-                if *val == 0 {
-                    multiset.remove(t);
-                }
-                true
-            } else {
-                false
-            }
-        })
+        .filter(|t| vs.contains(t))
         .for_each(|tyvar| {
             let preds = ps
                 .iter()
