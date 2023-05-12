@@ -391,3 +391,42 @@ fn to_scheme(t: &Type) -> Scheme {
 fn enum_id(n: usize) -> String {
     format!("v{n}")
 }
+
+fn with_defaults<F, A>(
+    f: F,
+    ce: &ClassEnv,
+    vs: &[Tyvar],
+    ps: &Vec<Pred>,
+    num_classes: &[Cow<str>],
+    std_classes: &[Cow<str>],
+) -> Result<A, &'static str>
+where
+    F: Fn(&[Ambiguity], &[Type]) -> A,
+{
+    let vps = ambiguities(ce, vs, ps);
+    let tss: Vec<_> = vps
+        .iter()
+        .map(|a| a.candidates(ce, num_classes, std_classes))
+        .collect();
+
+    if tss.iter().any(|t| t.is_empty()) {
+        return Err("cannot resolve ambiguity");
+    }
+
+    let mut types = Vec::new();
+
+    fn take<T>(mut vec: Vec<T>, index: usize) -> Option<T> {
+        if vec.get(index).is_none() {
+            None
+        } else {
+            Some(vec.swap_remove(index))
+        }
+    }
+
+    for ts in tss {
+        let a = take(ts, 0).ok_or("empty types")?;
+        types.push(a);
+    }
+
+    Ok(f(&vps, &types))
+}
