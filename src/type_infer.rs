@@ -305,14 +305,28 @@ impl TypeInfer {
         fs: &[Tyvar], // The set of ‘fixed’ variables, which are just the variables appearing free in the assumptions.
         gs: &[Tyvar], // The set of variables over which we would like to quantify.
         ps: Vec<Pred>,
+        num_classes: &[Cow<str>],
+        std_classes: &[Cow<str>],
     ) -> Result<(Vec<Pred>, Vec<Pred>), DynError> {
         let ps = ce.reduce(ps)?;
         let (ds, rs): (Vec<_>, Vec<_>) = ps
             .into_iter()
             .partition(|p| p.tv().iter().all(|t| fs.contains(t)));
-        // TODO: defaultedPreds
 
-        Ok((ds, rs))
+        let mut vs = Vec::new();
+
+        for tv in fs.iter() {
+            vs.push(tv.clone());
+        }
+        for tv in gs.iter() {
+            vs.push(tv.clone());
+        }
+
+        let rs2 = defaulted_preds(ce, &vs, &rs, num_classes, std_classes)?;
+
+        let rs3: Vec<_> = rs.into_iter().filter(|p| !rs2.contains(p)).collect();
+
+        Ok((ds, rs3))
     }
 }
 
@@ -429,4 +443,54 @@ where
     }
 
     Ok(f(&vps, &types))
+}
+
+fn defaulted_preds(
+    ce: &ClassEnv,
+    vs: &[Tyvar],
+    ps: &Vec<Pred>,
+    num_classes: &[Cow<str>],
+    std_classes: &[Cow<str>],
+) -> Result<Vec<Pred>, &'static str> {
+    with_defaults(
+        |vps, _ts| {
+            let mut result = Vec::new();
+            for vp in vps.iter() {
+                for pred in vp.preds.iter() {
+                    result.push(pred.clone());
+                }
+            }
+            result
+        },
+        ce,
+        vs,
+        ps,
+        num_classes,
+        std_classes,
+    )
+}
+
+fn defaulted_subst(
+    ce: &ClassEnv,
+    vs: &[Tyvar],
+    ps: &Vec<Pred>,
+    num_classes: &[Cow<str>],
+    std_classes: &[Cow<str>],
+) -> Result<Subst, &'static str> {
+    with_defaults(
+        |vps, ts| {
+            let mut result = Vec::new();
+
+            for (vp, t) in vps.iter().zip(ts.iter()) {
+                result.push((vp.tyvar.clone(), t.clone()));
+            }
+
+            result
+        },
+        ce,
+        vs,
+        ps,
+        num_classes,
+        std_classes,
+    )
 }
