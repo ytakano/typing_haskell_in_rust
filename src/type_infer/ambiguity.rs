@@ -52,7 +52,7 @@ impl Ambiguity {
     }
 }
 
-pub fn ambiguities(ce: &ClassEnv, vs: &[Tyvar], ps: &Vec<Pred>) -> Vec<Ambiguity> {
+pub fn ambiguities(ce: &ClassEnv, vs: &[Tyvar], ps: CowVec<Pred>) -> Vec<Ambiguity> {
     let mut result = Vec::new();
 
     ps.tv()

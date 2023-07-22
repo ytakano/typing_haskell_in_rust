@@ -8,7 +8,7 @@ use crate::{
     CowStr, CowVec,
 };
 
-use std::{collections::BTreeSet, ops::ControlFlow};
+use std::{borrow::Cow, collections::BTreeSet, ops::ControlFlow};
 
 use self::{ambiguity::Ambiguity, assump::Assump, instantiate::Instantiate, scheme::Scheme};
 
@@ -80,28 +80,28 @@ impl TypeInfer {
         scheme.qt.inst(&ts)
     }
 
-    fn ti_lit(&mut self, lit: &Literal) -> Result<(Vec<Pred>, Type), DynError> {
+    fn ti_lit(&mut self, lit: &Literal) -> Result<(CowVec<Pred>, Type), DynError> {
         match lit {
-            Literal::Bool(_) => Ok((vec![], T_BOOL.clone())),
-            Literal::Char(_) => Ok((vec![], T_CHAR.clone())),
+            Literal::Bool(_) => Ok((vec![].into(), T_BOOL.clone())),
+            Literal::Char(_) => Ok((vec![].into(), T_CHAR.clone())),
             Literal::Int(_) => {
                 let v = self.new_tvar(Kind::Star);
-                Ok((vec![Pred::new("Integral".into(), v.clone())], v))
+                Ok((vec![Pred::new("Integral".into(), v.clone())].into(), v))
             }
             Literal::Float(_) => {
                 let v = self.new_tvar(Kind::Star);
-                Ok((vec![Pred::new("RealFloat".into(), v.clone())], v))
+                Ok((vec![Pred::new("RealFloat".into(), v.clone())].into(), v))
             }
-            Literal::Str(_) => Ok((vec![], mk_list(T_CHAR.clone()))),
+            Literal::Str(_) => Ok((vec![].into(), mk_list(T_CHAR.clone()))),
         }
     }
 
-    fn ti_pat(&mut self, pat: &Pat) -> Result<(Vec<Pred>, Vec<Assump>, Type), DynError> {
+    fn ti_pat(&mut self, pat: &Pat) -> Result<(CowVec<Pred>, Vec<Assump>, Type), DynError> {
         match pat {
             Pat::Var(i) => {
                 let v = self.new_tvar(Kind::Star);
                 Ok((
-                    Vec::new(),
+                    Vec::new().into(),
                     vec![Assump {
                         id: i.clone().into(),
                         scheme: to_scheme(&v),
@@ -111,7 +111,7 @@ impl TypeInfer {
             }
             Pat::Wildcard => {
                 let v = self.new_tvar(Kind::Star);
-                Ok((Vec::new(), Vec::new(), v))
+                Ok((Vec::new().into(), Vec::new(), v))
             }
             Pat::Lit(l) => {
                 let (ps, t) = self.ti_lit(l)?;
@@ -139,14 +139,17 @@ impl TypeInfer {
                     .fold(tv.clone(), |acc, t| mk_fn(t.clone(), acc));
 
                 self.unify(&t, &t2)?;
-                ps.append(&mut preds);
+                ps.to_mut().append(preds.to_mut());
 
                 Ok((ps, assump, tv))
             }
         }
     }
 
-    fn ti_pats(&mut self, pats: &[Pat]) -> Result<(Vec<Pred>, Vec<Assump>, Vec<Type>), DynError> {
+    fn ti_pats(
+        &mut self,
+        pats: &[Pat],
+    ) -> Result<(CowVec<Pred>, Vec<Assump>, Vec<Type>), DynError> {
         let mut ps = Vec::new();
         let mut assump = Vec::new();
         let mut ts = Vec::new();
@@ -156,7 +159,7 @@ impl TypeInfer {
             .map(|pat| self.ti_pat(pat))
             .try_for_each(|result| match result {
                 Ok((mut ps_, mut assump_, t)) => {
-                    ps.append(&mut ps_);
+                    ps.append(ps_.to_mut());
                     assump.append(&mut assump_);
                     ts.push(t);
                     ControlFlow::Continue(())
@@ -167,7 +170,7 @@ impl TypeInfer {
         if let ControlFlow::Break(e) = result {
             Err(e)
         } else {
-            Ok((ps, assump, ts))
+            Ok((ps.into(), assump, ts))
         }
     }
 
@@ -176,7 +179,7 @@ impl TypeInfer {
         ce: &ClassEnv,
         assumps: &[Assump],
         expr: &Expr,
-    ) -> Result<(Vec<Pred>, Type), DynError> {
+    ) -> Result<(CowVec<Pred>, Type), DynError> {
         match expr {
             Expr::Var(id) => {
                 let sc = find(id, assumps)?;
@@ -196,7 +199,7 @@ impl TypeInfer {
                 let fn_type = mk_fn(tf, t.clone());
 
                 self.unify(&fn_type, &te)?;
-                ps.append(&mut qs);
+                ps.to_mut().append(qs.to_mut());
 
                 Ok((ps, t))
             }
@@ -212,12 +215,12 @@ impl TypeInfer {
         ce: &ClassEnv,
         assumps: &[Assump],
         alt: &Alt,
-    ) -> Result<(Vec<Pred>, Type), DynError> {
+    ) -> Result<(CowVec<Pred>, Type), DynError> {
         let (mut ps, mut ass, ts) = self.ti_pats(&alt.pats)?;
         ass.extend(assumps.iter().map(|a| a.clone()));
         let (mut qs, t) = self.ti_expr(ce, &ass, &alt.expr)?;
 
-        ps.append(&mut qs);
+        ps.to_mut().append(qs.to_mut());
 
         let t2 = ts.iter().rev().fold(t, |acc, t| mk_fn(t.clone(), acc));
 
@@ -230,12 +233,12 @@ impl TypeInfer {
         assumps: &[Assump],
         alts: &[Alt],
         t: &Type,
-    ) -> Result<Vec<Pred>, DynError> {
+    ) -> Result<CowVec<Pred>, DynError> {
         let mut preds = Vec::new();
         let mut ts = Vec::new();
         for alt in alts.iter() {
             let (mut ps, t2) = self.ti_alt(ce, assumps, alt)?;
-            preds.append(&mut ps);
+            preds.append(ps.to_mut());
             ts.push(t2);
         }
 
@@ -243,15 +246,15 @@ impl TypeInfer {
             self.unify(t, t2)?;
         }
 
-        Ok(preds)
+        Ok(preds.into())
     }
 
     fn ti_expl(
         &mut self,
         ce: &ClassEnv,
-        assumps: &Vec<Assump>,
+        assumps: &CowVec<Assump>,
         expl: &Expl,
-    ) -> Result<Vec<Pred>, DynError> {
+    ) -> Result<CowVec<Pred>, DynError> {
         let qt = self.fresh_inst(&expl.scheme);
         let ps = self.ti_alts(ce, assumps, &expl.alts, &qt.t)?;
 
@@ -289,8 +292,8 @@ impl TypeInfer {
         ce: &ClassEnv,
         fs: &BTreeSet<Tyvar>, // The set of ‘fixed’ variables, which are just the variables appearing free in the assumptions.
         gs: &[Tyvar],         // The set of variables over which we would like to quantify.
-        ps: Vec<Pred>,
-    ) -> Result<(Vec<Pred>, Vec<Pred>), DynError> {
+        ps: CowVec<Pred>,
+    ) -> Result<(CowVec<Pred>, CowVec<Pred>), DynError> {
         let ps = ce.reduce(ps)?;
         let (ds, rs): (Vec<_>, Vec<_>) = ps
             .into_iter()
@@ -305,11 +308,17 @@ impl TypeInfer {
             vs.push(tv.clone());
         }
 
-        let rs2 = defaulted_preds(ce, &vs, &rs, &self.num_classes, &self.std_classes)?;
+        let rs: CowVec<Pred> = Cow::Owned(rs);
 
-        let rs3: Vec<_> = rs.into_iter().filter(|p| !rs2.contains(p)).collect();
+        let rs2 = defaulted_preds(ce, &vs, rs.clone(), &self.num_classes, &self.std_classes)?;
 
-        Ok((ds, rs3))
+        let rs3: Vec<_> = rs
+            .to_vec()
+            .into_iter()
+            .filter(|p| !rs2.contains(p))
+            .collect();
+
+        Ok((ds.into(), rs3.into()))
     }
 }
 
@@ -341,7 +350,7 @@ fn to_scheme(t: &Type) -> Scheme {
     Scheme {
         kind: vec![].into(),
         qt: Qual {
-            preds: vec![],
+            preds: vec![].into(),
             t: t.clone(),
         },
     }
@@ -355,7 +364,7 @@ fn with_defaults<F, A>(
     f: F,
     ce: &ClassEnv,
     vs: &[Tyvar],
-    ps: &Vec<Pred>,
+    ps: CowVec<Pred>,
     num_classes: &[CowStr],
     std_classes: &[CowStr],
 ) -> Result<A, &'static str>
@@ -393,7 +402,7 @@ where
 fn defaulted_preds(
     ce: &ClassEnv,
     vs: &[Tyvar],
-    ps: &Vec<Pred>,
+    ps: CowVec<Pred>,
     num_classes: &[CowStr],
     std_classes: &[CowStr],
 ) -> Result<Vec<Pred>, &'static str> {
@@ -418,7 +427,7 @@ fn defaulted_preds(
 fn defaulted_subst(
     ce: &ClassEnv,
     vs: &[Tyvar],
-    ps: &Vec<Pred>,
+    ps: CowVec<Pred>,
     num_classes: &[CowStr],
     std_classes: &[CowStr],
 ) -> Result<Subst, &'static str> {

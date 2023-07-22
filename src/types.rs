@@ -181,7 +181,10 @@ impl Types for Type {
     }
 }
 
-impl<T: Types> Types for Vec<T> {
+impl<T: Types + Clone> Types for CowVec<T>
+where
+    [T]: ToOwned,
+{
     fn apply(&self, subst: Subst) -> Self {
         self.iter().map(|t| t.apply(subst.clone())).collect()
     }

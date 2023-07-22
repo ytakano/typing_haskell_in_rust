@@ -1,6 +1,7 @@
 use crate::{
     predicate::{Pred, Qual},
     types::Type,
+    CowVec,
 };
 
 pub trait Instantiate {
@@ -17,7 +18,10 @@ impl Instantiate for Type {
     }
 }
 
-impl<T: Instantiate> Instantiate for Vec<T> {
+impl<T: Instantiate + Clone> Instantiate for CowVec<T>
+where
+    [T]: ToOwned,
+{
     fn inst(&self, types: &[Type]) -> Self {
         self.iter().map(|t| t.inst(types)).collect()
     }

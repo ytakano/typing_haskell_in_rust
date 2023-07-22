@@ -88,7 +88,7 @@ impl ClassEnv {
     /// };
     /// env.add_inst(vec![], eq_int).unwrap();
     /// ```
-    pub fn add_inst(&mut self, ps: Vec<Pred>, p: Pred) -> Result<(), DynError> {
+    pub fn add_inst(&mut self, ps: CowVec<Pred>, p: Pred) -> Result<(), DynError> {
         if !self.classes.contains_key(&p.id) {
             return Err("no class for instance".into());
         }
@@ -137,7 +137,7 @@ impl ClassEnv {
         result
     }
 
-    fn by_inst(&self, pred: &Pred) -> Option<Vec<Pred>> {
+    fn by_inst(&self, pred: &Pred) -> Option<CowVec<Pred>> {
         for it in self.insts(&pred.id)?.iter() {
             if let Ok(u) = type_match_pred(&it.t, pred) {
                 let result = it.preds.apply(u);
@@ -166,10 +166,10 @@ impl ClassEnv {
         ps.map(|p_| self.by_super(p_)).any(|ps_| ps_.contains(p))
     }
 
-    fn to_hnfs(&self, ps: Vec<Pred>) -> Result<Vec<Pred>, DynError> {
+    fn to_hnfs(&self, ps: CowVec<Pred>) -> Result<Vec<Pred>, DynError> {
         let mut result = Vec::new();
-        for p in ps {
-            result.append(&mut self.to_hnf(p)?);
+        for p in ps.iter() {
+            result.append(&mut self.to_hnf(p.clone())?);
         }
         Ok(result)
     }
@@ -197,7 +197,7 @@ impl ClassEnv {
         result
     }
 
-    pub(crate) fn reduce(&self, ps: Vec<Pred>) -> Result<Vec<Pred>, DynError> {
+    pub(crate) fn reduce(&self, ps: CowVec<Pred>) -> Result<Vec<Pred>, DynError> {
         let qs = self.to_hnfs(ps)?;
         Ok(self.simplify(qs))
     }
@@ -224,14 +224,14 @@ mod tests {
             id: "Eq".into(),
             t: T_INT.clone(),
         };
-        env.add_inst(vec![], eq_int).unwrap();
+        env.add_inst(vec![].into(), eq_int).unwrap();
 
         // get the instances of `Eq`
         let eq_insts = env.insts(&"Eq".into()).unwrap();
         eprintln!("{:?}", eq_insts);
 
         let expected = vec![Inst {
-            preds: Vec::new(),
+            preds: Vec::new().into(),
             t: Pred {
                 id: "Eq".into(),
                 t: T_INT.clone(),

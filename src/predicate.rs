@@ -1,7 +1,7 @@
 use crate::{
     error::DynError,
     types::{mgu, type_match, Subst, Type, Types, Tyvar},
-    CowStr,
+    CowStr, CowVec,
 };
 
 use std::collections::BTreeSet;
@@ -22,7 +22,7 @@ impl Pred {
 /// Qualifier.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub(crate) struct Qual<T> {
-    pub preds: Vec<Pred>,
+    pub preds: CowVec<Pred>,
     pub t: T,
 }
 
