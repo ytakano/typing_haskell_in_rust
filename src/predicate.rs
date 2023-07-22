@@ -2,6 +2,7 @@ use crate::{
     error::DynError,
     types::{mgu, type_match, Subst, Type, Types, Tyvar},
 };
+
 use std::{borrow::Cow, collections::BTreeSet};
 
 /// Predicate.

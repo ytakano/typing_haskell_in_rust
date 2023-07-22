@@ -3,58 +3,18 @@ use crate::{
     error::DynError,
     predicate::{Pred, Qual},
     type_class::ClassEnv,
+    type_infer::ambiguity::ambiguities,
     types::*,
 };
-use std::{borrow::Cow, collections::BTreeSet, ops::ControlFlow};
 
-/// Type schemes are used to describe polymorphic types,
-/// and are represented using a list of kinds and a qualified type
-///
-/// In a type scheme `Scheme { kind, qt }`,  each type of the form
-/// `Type::TGen(n)` that appears in the qualified type `qt`
-/// represents a generic, or universally quantified type variable
-/// whose kind is given by `ks[n]`.
-///
-/// This is the only place where we will allow `Type::TGen` values to appear in a type.
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Scheme {
-    kind: Vec<Kind>,
-    qt: Qual<Type>,
-}
+use std::{borrow::Cow, ops::ControlFlow};
 
-impl Types for Scheme {
-    fn apply(&self, subst: &Subst) -> Scheme {
-        Scheme {
-            kind: self.kind.clone(),
-            qt: self.qt.apply(subst),
-        }
-    }
+use self::{ambiguity::Ambiguity, assump::Assump, instantiate::Instantiate, scheme::Scheme};
 
-    fn tv(&self) -> BTreeSet<Tyvar> {
-        self.qt.tv()
-    }
-}
-
-/// Assumptions about the type of a variable are represented by values of the `Assump` datatype,
-/// each of which pairs a variable name with a type scheme.
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Assump {
-    id: Cow<'static, str>, // variable name
-    scheme: Scheme,        // type scheme
-}
-
-impl Types for Assump {
-    fn apply(&self, subst: &Subst) -> Self {
-        Assump {
-            id: self.id.clone(),
-            scheme: self.scheme.apply(subst),
-        }
-    }
-
-    fn tv(&self) -> BTreeSet<Tyvar> {
-        self.scheme.tv()
-    }
-}
+mod ambiguity;
+pub mod assump;
+mod instantiate;
+pub mod scheme;
 
 fn find(id: &str, assumps: &[Assump]) -> Result<Scheme, DynError> {
     for assump in assumps {
@@ -64,70 +24,6 @@ fn find(id: &str, assumps: &[Assump]) -> Result<Scheme, DynError> {
     }
 
     Err("unbound identifier".into())
-}
-
-pub struct Ambiguity {
-    tyvar: Tyvar,
-    preds: Vec<Pred>,
-}
-
-impl Ambiguity {
-    fn candidates(
-        &self,
-        ce: &ClassEnv,
-        num_classes: &[Cow<str>],
-        std_classes: &[Cow<str>],
-    ) -> Vec<Type> {
-        let mut result = Vec::new();
-
-        let is = self.preds.iter().map(|n| &n.id);
-        let mut ts = self.preds.iter().map(|n| &n.t);
-
-        let v = Type::TVar(self.tyvar.clone());
-        let ref_v = &v;
-
-        if ts.all(|t| *t == *ref_v)
-            && is.clone().any(|i| num_classes.contains(i))
-            && is.clone().all(|i| std_classes.contains(i))
-        {
-            for t in ce.default_types.iter() {
-                if is
-                    .clone()
-                    .map(|i| Pred {
-                        id: i.clone(),
-                        t: t.clone(),
-                    })
-                    .all(|pred| {
-                        let empty = Vec::new();
-                        ce.entail(&mut empty.iter(), &pred)
-                    })
-                {
-                    result.push(t.clone());
-                }
-            }
-        }
-
-        result
-    }
-}
-
-fn ambiguities(ce: &ClassEnv, vs: &[Tyvar], ps: &Vec<Pred>) -> Vec<Ambiguity> {
-    let mut result = Vec::new();
-
-    ps.tv()
-        .into_iter()
-        .filter(|t| vs.contains(t))
-        .for_each(|tyvar| {
-            let preds = ps
-                .iter()
-                .filter(|p| p.tv().contains(&tyvar))
-                .map(|p| p.clone())
-                .collect();
-            let ambiguity = Ambiguity { tyvar, preds };
-            result.push(ambiguity)
-        });
-
-    result
 }
 
 #[derive(Debug)]
@@ -327,44 +223,6 @@ impl TypeInfer {
         let rs3: Vec<_> = rs.into_iter().filter(|p| !rs2.contains(p)).collect();
 
         Ok((ds, rs3))
-    }
-}
-
-trait Instantiate {
-    fn inst(&self, types: &[Type]) -> Self;
-}
-
-impl Instantiate for Type {
-    fn inst(&self, types: &[Type]) -> Self {
-        match self {
-            Type::TAp(l, r) => Type::TAp(Box::new(l.inst(types)), Box::new(r.inst(types))),
-            Type::TGen(n) => types[*n].clone(),
-            t => t.clone(),
-        }
-    }
-}
-
-impl<T: Instantiate> Instantiate for Vec<T> {
-    fn inst(&self, types: &[Type]) -> Self {
-        self.iter().map(|t| t.inst(types)).collect()
-    }
-}
-
-impl<T: Instantiate> Instantiate for Qual<T> {
-    fn inst(&self, types: &[Type]) -> Self {
-        Qual {
-            preds: self.preds.inst(types),
-            t: self.t.inst(types),
-        }
-    }
-}
-
-impl Instantiate for Pred {
-    fn inst(&self, types: &[Type]) -> Self {
-        Pred {
-            id: self.id.clone(),
-            t: self.t.inst(types),
-        }
     }
 }
 

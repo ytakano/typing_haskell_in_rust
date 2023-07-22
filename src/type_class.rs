@@ -3,6 +3,7 @@ use crate::{
     predicate::{in_hnf, mgu_pred, type_match_pred, Pred, Qual},
     types::{Type, Types},
 };
+
 use std::{borrow::Cow, collections::BTreeMap};
 
 /// Type class.

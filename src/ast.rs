@@ -1,4 +1,4 @@
-use crate::type_infer::{Assump, Scheme};
+use crate::type_infer::{assump::Assump, scheme::Scheme};
 
 #[derive(Debug, Clone)]
 pub enum Literal {

@@ -6,6 +6,7 @@ use crate::{
         T_UNIT,
     },
 };
+
 use std::vec;
 
 pub fn haskell(class_env: &mut ClassEnv) {
