@@ -2,7 +2,7 @@ use crate::{
     error::DynError,
     predicate::{in_hnf, mgu_pred, type_match_pred, Pred, Qual},
     types::{Type, Types},
-    CowStr,
+    CowStr, CowVec,
 };
 
 use std::collections::BTreeMap;
@@ -19,11 +19,11 @@ pub(crate) type Inst = Qual<Pred>;
 
 pub struct ClassEnv {
     classes: BTreeMap<CowStr, Class>,
-    pub(crate) default_types: Vec<Type>, // default types
+    pub(crate) default_types: CowVec<Type>, // default types
 }
 
 impl ClassEnv {
-    pub fn new(default_types: Vec<Type>) -> Self {
+    pub fn new(default_types: CowVec<Type>) -> Self {
         ClassEnv {
             classes: BTreeMap::new(),
             default_types,
@@ -215,7 +215,7 @@ mod tests {
         // impl Eq for Int {} // instance
 
         // add `Eq` class
-        let mut env = ClassEnv::new(vec![]);
+        let mut env = ClassEnv::new(vec![].into());
         env.add_class("Eq".into(), vec![]).unwrap();
 
         // add a instance of `Eq` for `Int`

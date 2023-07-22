@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_instances() {
-        let mut env = ClassEnv::new(vec![]);
+        let mut env = ClassEnv::new(vec![].into());
         haskell(&mut env);
 
         // overlapped instance

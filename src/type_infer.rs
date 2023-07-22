@@ -332,14 +332,14 @@ fn quantify(vs: &[Tyvar], qt: Qual<Type>) -> Scheme {
     let kind: Vec<_> = subst.iter().map(|(v, _)| v.kind.clone()).collect();
 
     Scheme {
-        kind,
+        kind: kind.into(),
         qt: qt.apply(subst.into()),
     }
 }
 
 fn to_scheme(t: &Type) -> Scheme {
     Scheme {
-        kind: vec![],
+        kind: vec![].into(),
         qt: Qual {
             preds: vec![],
             t: t.clone(),

@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use crate::{
     predicate::Qual,
     types::{Kind, Subst, Type, Types, Tyvar},
+    CowVec,
 };
 
 /// Type schemes are used to describe polymorphic types,
@@ -16,7 +17,7 @@ use crate::{
 /// This is the only place where we will allow `Type::TGen` values to appear in a type.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Scheme {
-    pub(super) kind: Vec<Kind>,
+    pub(super) kind: CowVec<Kind>,
     pub(super) qt: Qual<Type>,
 }
 
