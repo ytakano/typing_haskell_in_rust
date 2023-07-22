@@ -5,9 +5,10 @@ use crate::{
     type_class::ClassEnv,
     type_infer::ambiguity::ambiguities,
     types::*,
+    CowStr, CowVec,
 };
 
-use std::{borrow::Cow, ops::ControlFlow};
+use std::{collections::BTreeSet, ops::ControlFlow};
 
 use self::{ambiguity::Ambiguity, assump::Assump, instantiate::Instantiate, scheme::Scheme};
 
@@ -26,17 +27,27 @@ fn find(id: &str, assumps: &[Assump]) -> Result<Scheme, DynError> {
     Err("unbound identifier".into())
 }
 
+struct Expl {
+    id: CowStr,
+    scheme: Scheme,
+    alts: CowVec<Alt>,
+}
+
 #[derive(Debug)]
 struct TypeInfer {
     subst: Subst,
     n: usize,
+    num_classes: CowVec<CowStr>,
+    std_classes: CowVec<CowStr>,
 }
 
 impl TypeInfer {
-    fn new() -> Self {
+    fn new(num_classes: CowVec<CowStr>, std_classes: CowVec<CowStr>) -> Self {
         TypeInfer {
             subst: Subst::new(),
             n: 0,
+            num_classes,
+            std_classes,
         }
     }
 
@@ -59,6 +70,7 @@ impl TypeInfer {
         })
     }
 
+    /// Instantiate a type scheme with new type variables of appropriate kinds.
     fn fresh_inst(&mut self, scheme: &Scheme) -> Qual<Type> {
         let ts: Vec<_> = scheme
             .kind
@@ -234,14 +246,50 @@ impl TypeInfer {
         Ok(preds)
     }
 
+    fn ti_expl(
+        &mut self,
+        ce: &ClassEnv,
+        assumps: &Vec<Assump>,
+        expl: &Expl,
+    ) -> Result<Vec<Pred>, DynError> {
+        let qt = self.fresh_inst(&expl.scheme);
+        let ps = self.ti_alts(ce, assumps, &expl.alts, &qt.t)?;
+
+        let qs2 = qt.preds.apply(&self.subst);
+        let t2 = qt.t.apply(&self.subst);
+        let fs = assumps.apply(&self.subst).tv();
+        let gs: Vec<_> = t2.tv().difference(&fs).cloned().collect();
+        let sc2 = quantify(
+            &gs,
+            Qual {
+                preds: qs2.clone(),
+                t: t2,
+            },
+        );
+        let ps = ps
+            .apply(&self.subst)
+            .iter()
+            .filter(|p| !ce.entail(&mut qs2.iter(), p))
+            .cloned()
+            .collect();
+
+        let (ds, rs) = self.split(ce, &fs, &gs, ps)?;
+
+        if expl.scheme != sc2 {
+            Err("signature too general".into())
+        } else if !rs.is_empty() {
+            Err("context too weak".into())
+        } else {
+            Ok(ds)
+        }
+    }
+
     fn split(
         &mut self,
         ce: &ClassEnv,
-        fs: &[Tyvar], // The set of ‘fixed’ variables, which are just the variables appearing free in the assumptions.
-        gs: &[Tyvar], // The set of variables over which we would like to quantify.
+        fs: &BTreeSet<Tyvar>, // The set of ‘fixed’ variables, which are just the variables appearing free in the assumptions.
+        gs: &[Tyvar],         // The set of variables over which we would like to quantify.
         ps: Vec<Pred>,
-        num_classes: &[Cow<str>],
-        std_classes: &[Cow<str>],
     ) -> Result<(Vec<Pred>, Vec<Pred>), DynError> {
         let ps = ce.reduce(ps)?;
         let (ds, rs): (Vec<_>, Vec<_>) = ps
@@ -257,7 +305,7 @@ impl TypeInfer {
             vs.push(tv.clone());
         }
 
-        let rs2 = defaulted_preds(ce, &vs, &rs, num_classes, std_classes)?;
+        let rs2 = defaulted_preds(ce, &vs, &rs, &self.num_classes, &self.std_classes)?;
 
         let rs3: Vec<_> = rs.into_iter().filter(|p| !rs2.contains(p)).collect();
 
@@ -308,8 +356,8 @@ fn with_defaults<F, A>(
     ce: &ClassEnv,
     vs: &[Tyvar],
     ps: &Vec<Pred>,
-    num_classes: &[Cow<str>],
-    std_classes: &[Cow<str>],
+    num_classes: &[CowStr],
+    std_classes: &[CowStr],
 ) -> Result<A, &'static str>
 where
     F: Fn(&[Ambiguity], &[Type]) -> A,
@@ -346,8 +394,8 @@ fn defaulted_preds(
     ce: &ClassEnv,
     vs: &[Tyvar],
     ps: &Vec<Pred>,
-    num_classes: &[Cow<str>],
-    std_classes: &[Cow<str>],
+    num_classes: &[CowStr],
+    std_classes: &[CowStr],
 ) -> Result<Vec<Pred>, &'static str> {
     with_defaults(
         |vps, _ts| {
@@ -371,8 +419,8 @@ fn defaulted_subst(
     ce: &ClassEnv,
     vs: &[Tyvar],
     ps: &Vec<Pred>,
-    num_classes: &[Cow<str>],
-    std_classes: &[Cow<str>],
+    num_classes: &[CowStr],
+    std_classes: &[CowStr],
 ) -> Result<Subst, &'static str> {
     with_defaults(
         |vps, ts| {
