@@ -33,6 +33,11 @@ struct Expl {
     alts: CowVec<Alt>,
 }
 
+struct Impl {
+    id: CowStr,
+    alts: CowVec<Alt>,
+}
+
 #[derive(Debug)]
 struct TypeInfer {
     subst: Subst,
@@ -252,11 +257,11 @@ impl TypeInfer {
     fn ti_expl(
         &mut self,
         ce: &ClassEnv,
-        assumps: &CowVec<Assump>,
+        assumps: CowVec<Assump>,
         expl: &Expl,
     ) -> Result<CowVec<Pred>, DynError> {
         let qt = self.fresh_inst(&expl.scheme);
-        let ps = self.ti_alts(ce, assumps, &expl.alts, &qt.t)?;
+        let ps = self.ti_alts(ce, &assumps, &expl.alts, &qt.t)?;
 
         let qs2 = qt.preds.apply(self.subst.clone());
         let t2 = qt.t.apply(self.subst.clone());
@@ -285,6 +290,51 @@ impl TypeInfer {
         } else {
             Ok(ds)
         }
+    }
+
+    fn ti_impl(
+        &mut self,
+        ce: &ClassEnv,
+        assumps: CowVec<Assump>,
+        bs: &[Impl],
+    ) -> Result<(CowVec<Pred>, CowVec<Assump>), DynError> {
+        let ts: CowVec<_> = bs.iter().map(|_| self.new_tvar(Kind::Star)).collect();
+
+        let is = bs.iter().map(|im| im.id.clone());
+        let scs = ts.iter().map(|t| to_scheme(&t));
+        let assumps2 = is
+            .zip(scs)
+            .map(|(id, scheme)| Assump { id, scheme })
+            .chain(assumps.iter().cloned());
+        let altss = bs.iter().map(|im| im.alts.clone());
+
+        let pss: Result<Vec<_>, _> = altss
+            .zip(ts.iter())
+            .map(|(alts, t)| self.ti_alts(ce, &assumps, &alts, t))
+            .collect();
+        let pss = pss?;
+
+        let ps2 = CowVec::Owned(pss.concat()).apply(self.subst.clone());
+        let ts2 = ts.apply(self.subst.clone());
+        let fs = assumps.apply(self.subst.clone()).tv();
+        let vss: Vec<_> = ts2.iter().map(|t| t.tv()).collect();
+
+        let mut it = vss.clone().into_iter().rev();
+        let first = it.next().ok_or("vss is empty")?;
+        let gs = it
+            .fold(first, |acc, s| s.union(&acc).cloned().collect())
+            .difference(&fs);
+
+        let mut it = vss.into_iter().rev();
+        let first = it.next().ok_or("vss is empty")?;
+        let gs_vec: Vec<_> = it
+            .fold(first, |acc, s| s.intersection(&acc).cloned().collect())
+            .into_iter()
+            .collect();
+
+        let (ds, rs) = self.split(ce, &fs, &gs_vec, ps2)?;
+
+        todo!()
     }
 
     fn split(

@@ -113,12 +113,12 @@ impl ClassEnv {
         Ok(())
     }
 
-    fn super_class(&self, id: &CowStr) -> Option<CowVec<CowStr>> {
+    fn super_class(&self, id: &str) -> Option<CowVec<CowStr>> {
         self.classes.get(id).map(|c| c.super_class.clone())
     }
 
     /// Get instances of a class.
-    fn insts(&self, id: &CowStr) -> Option<CowVec<Inst>> {
+    fn insts(&self, id: &str) -> Option<CowVec<Inst>> {
         self.classes.get(id).map(|c| c.insts.clone())
     }
 
@@ -227,7 +227,7 @@ mod tests {
         env.add_inst(vec![].into(), eq_int).unwrap();
 
         // get the instances of `Eq`
-        let eq_insts = env.insts(&"Eq".into()).unwrap();
+        let eq_insts = env.insts("Eq").unwrap();
         eprintln!("{:?}", eq_insts);
 
         let expected = vec![Inst {
