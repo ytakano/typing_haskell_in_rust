@@ -2,14 +2,15 @@ use crate::{
     error::DynError,
     predicate::{in_hnf, mgu_pred, type_match_pred, Pred, Qual},
     types::{Type, Types},
+    CowStr,
 };
 
-use std::{borrow::Cow, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 /// Type class.
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct Class {
-    super_class: Vec<Cow<'static, str>>,
+    super_class: Vec<CowStr>,
     insts: Vec<Inst>,
 }
 
@@ -17,7 +18,7 @@ struct Class {
 pub(crate) type Inst = Qual<Pred>;
 
 pub struct ClassEnv {
-    classes: BTreeMap<Cow<'static, str>, Class>,
+    classes: BTreeMap<CowStr, Class>,
     pub(crate) default_types: Vec<Type>, // default types
 }
 
@@ -44,11 +45,7 @@ impl ClassEnv {
     /// env.add_class("Eq".into(), vec![]);
     /// env.add_class("Ord".into(), vec!["Eq".into()]);
     /// ```
-    pub fn add_class(
-        &mut self,
-        id: Cow<'static, str>,
-        super_class: Vec<Cow<'static, str>>,
-    ) -> Result<(), DynError> {
+    pub fn add_class(&mut self, id: CowStr, super_class: Vec<CowStr>) -> Result<(), DynError> {
         if self.classes.contains_key(&id) {
             return Err("class already defined".into());
         }
@@ -115,12 +112,12 @@ impl ClassEnv {
         Ok(())
     }
 
-    fn super_class(&self, id: &Cow<'static, str>) -> Option<&[Cow<'static, str>]> {
+    fn super_class(&self, id: &CowStr) -> Option<&[CowStr]> {
         self.classes.get(id).map(|c| c.super_class.as_slice())
     }
 
     /// Get instances of a class.
-    fn insts(&self, id: &Cow<'static, str>) -> Option<&[Inst]> {
+    fn insts(&self, id: &CowStr) -> Option<&[Inst]> {
         self.classes.get(id).map(|c| c.insts.as_slice())
     }
 
@@ -142,7 +139,7 @@ impl ClassEnv {
     fn by_inst(&self, pred: &Pred) -> Option<Vec<Pred>> {
         for it in self.insts(&pred.id)?.iter() {
             if let Ok(u) = type_match_pred(&it.t, pred) {
-                let result = it.preds.apply(&u);
+                let result = it.preds.apply(u);
                 return Some(result);
             }
         }

@@ -44,7 +44,7 @@ struct TypeInfer {
 impl TypeInfer {
     fn new(num_classes: CowVec<CowStr>, std_classes: CowVec<CowStr>) -> Self {
         TypeInfer {
-            subst: Subst::new(),
+            subst: null_subst(),
             n: 0,
             num_classes,
             std_classes,
@@ -52,11 +52,11 @@ impl TypeInfer {
     }
 
     fn unify(&mut self, t1: &Type, t2: &Type) -> Result<(), DynError> {
-        let t1 = t1.apply(&self.subst);
-        let t2 = t2.apply(&self.subst);
+        let t1 = t1.apply(self.subst.clone());
+        let t2 = t2.apply(self.subst.clone());
         let u = mgu(&t1, &t2)?;
 
-        self.subst = compose(&u, &self.subst);
+        self.subst = compose(u, self.subst.clone());
 
         Ok(())
     }
@@ -255,9 +255,9 @@ impl TypeInfer {
         let qt = self.fresh_inst(&expl.scheme);
         let ps = self.ti_alts(ce, assumps, &expl.alts, &qt.t)?;
 
-        let qs2 = qt.preds.apply(&self.subst);
-        let t2 = qt.t.apply(&self.subst);
-        let fs = assumps.apply(&self.subst).tv();
+        let qs2 = qt.preds.apply(self.subst.clone());
+        let t2 = qt.t.apply(self.subst.clone());
+        let fs = assumps.apply(self.subst.clone()).tv();
         let gs: Vec<_> = t2.tv().difference(&fs).cloned().collect();
         let sc2 = quantify(
             &gs,
@@ -267,7 +267,7 @@ impl TypeInfer {
             },
         );
         let ps = ps
-            .apply(&self.subst)
+            .apply(self.subst.clone())
             .iter()
             .filter(|p| !ce.entail(&mut qs2.iter(), p))
             .cloned()
@@ -324,7 +324,7 @@ impl TypeInfer {
 fn quantify(vs: &[Tyvar], qt: Qual<Type>) -> Scheme {
     let vs = qt.tv().into_iter().filter(|v| vs.contains(v));
 
-    let mut subst = Subst::new();
+    let mut subst = Vec::new();
     for (i, v) in vs.enumerate() {
         subst.push((v, Type::TGen(i)));
     }
@@ -333,7 +333,7 @@ fn quantify(vs: &[Tyvar], qt: Qual<Type>) -> Scheme {
 
     Scheme {
         kind,
-        qt: qt.apply(&subst),
+        qt: qt.apply(subst.into()),
     }
 }
 
@@ -438,4 +438,5 @@ fn defaulted_subst(
         num_classes,
         std_classes,
     )
+    .map(|r| r.into())
 }

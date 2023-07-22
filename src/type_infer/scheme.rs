@@ -21,7 +21,7 @@ pub struct Scheme {
 }
 
 impl Types for Scheme {
-    fn apply(&self, subst: &Subst) -> Scheme {
+    fn apply(&self, subst: Subst) -> Scheme {
         Scheme {
             kind: self.kind.clone(),
             qt: self.qt.apply(subst),

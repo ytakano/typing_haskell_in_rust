@@ -1,26 +1,29 @@
-use crate::type_infer::{assump::Assump, scheme::Scheme};
+use crate::{
+    type_infer::{assump::Assump, scheme::Scheme},
+    CowStr,
+};
 
 #[derive(Debug, Clone)]
 pub enum Literal {
     Int(num::BigInt),
     Float(f64),
-    Str(String),
+    Str(CowStr),
     Char(char),
     Bool(bool),
 }
 
 #[derive(Debug, Clone)]
 pub enum Pat {
-    Var(String),                           // variable
+    Var(CowStr),                           // variable
     Wildcard,                              // wildcard
-    As { id: String, pat: Box<Pat> },      // as pattern
+    As { id: CowStr, pat: Box<Pat> },      // as pattern
     Lit(Literal),                          // literal
     Con { assump: Assump, pat: Vec<Pat> }, // type constructor
 }
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Var(String),               // variable
+    Var(CowStr),               // variable
     Lit(Literal),              // literal
     Const(Assump),             // constructor
     Ap(Box<Expr>, Box<Expr>),  // application
@@ -40,7 +43,7 @@ pub struct Alt {
 /// Explicitly Typed Bindings.
 #[derive(Debug, Clone)]
 pub struct Expl {
-    pub id: String,
+    pub id: CowStr,
     pub scheme: Scheme,
     pub alt: Vec<Alt>,
 }
@@ -48,7 +51,7 @@ pub struct Expl {
 /// Implicitly Typed Bindings.
 #[derive(Debug, Clone)]
 pub struct Impl {
-    pub id: String,
+    pub id: CowStr,
     pub alt: Vec<Alt>,
 }
 

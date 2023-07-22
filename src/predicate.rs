@@ -1,19 +1,20 @@
 use crate::{
     error::DynError,
     types::{mgu, type_match, Subst, Type, Types, Tyvar},
+    CowStr,
 };
 
-use std::{borrow::Cow, collections::BTreeSet};
+use std::collections::BTreeSet;
 
 /// Predicate.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Pred {
-    pub id: Cow<'static, str>,
+    pub id: CowStr,
     pub t: Type,
 }
 
 impl Pred {
-    pub fn new(id: Cow<'static, str>, t: Type) -> Self {
+    pub fn new(id: CowStr, t: Type) -> Self {
         Pred { id, t }
     }
 }
@@ -26,7 +27,7 @@ pub(crate) struct Qual<T> {
 }
 
 impl Types for Pred {
-    fn apply(&self, subst: &Subst) -> Self {
+    fn apply(&self, subst: Subst) -> Self {
         Pred {
             id: self.id.clone(),
             t: self.t.apply(subst),
@@ -39,9 +40,9 @@ impl Types for Pred {
 }
 
 impl<T: Types> Types for Qual<T> {
-    fn apply(&self, subst: &Subst) -> Self {
+    fn apply(&self, subst: Subst) -> Self {
         Qual {
-            preds: self.preds.iter().map(|p| p.apply(subst)).collect(),
+            preds: self.preds.iter().map(|p| p.apply(subst.clone())).collect(),
             t: self.t.apply(subst),
         }
     }

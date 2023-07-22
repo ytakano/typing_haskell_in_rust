@@ -1,10 +1,14 @@
 use once_cell::sync::Lazy;
+
 use std::{borrow::Cow, collections::BTreeSet};
 
-use crate::error::DynError;
+use crate::{error::DynError, CowStr, CowVec};
 
-pub(crate) type Subst = Vec<(Tyvar, Type)>;
-pub(crate) const NULL_SUBST: Subst = vec![];
+pub(crate) type Subst = CowVec<(Tyvar, Type)>;
+
+pub(crate) fn null_subst() -> Subst {
+    Cow::Owned(vec![])
+}
 
 /// Kind of type.
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
@@ -16,14 +20,14 @@ pub enum Kind {
 /// Type variable.
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
 pub struct Tyvar {
-    pub id: Cow<'static, str>,
+    pub id: CowStr,
     pub kind: Kind,
 }
 
 /// Type constructor.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Tycon {
-    pub id: Cow<'static, str>,
+    pub id: CowStr,
     pub kind: Kind,
 }
 
@@ -101,7 +105,7 @@ pub fn mk_pair(a: Type, b: Type) -> Type {
     )
 }
 
-pub fn mk_tvar(id: Cow<'static, str>, kind: Kind) -> Type {
+pub fn mk_tvar(id: CowStr, kind: Kind) -> Type {
     Type::TVar(Tyvar { id, kind })
 }
 
@@ -140,19 +144,21 @@ impl HasKind for Type {
 }
 
 pub(crate) trait Types {
-    fn apply(&self, subst: &Subst) -> Self; // apply `subst` to `self`
+    fn apply(&self, subst: Subst) -> Self; // apply `subst` to `self`
     fn tv(&self) -> BTreeSet<Tyvar>; // set of type variables in `self`
 }
 
 impl Types for Type {
-    fn apply(&self, subst: &Subst) -> Self {
+    fn apply(&self, subst: Subst) -> Self {
         match self {
             Type::TVar(u) => subst
                 .iter()
                 .find(|(u_, _)| u == u_)
                 .map(|(_, t)| t.clone())
                 .unwrap_or(Type::TVar(u.clone())),
-            Type::TAp(l, r) => Type::TAp(Box::new(l.apply(subst)), Box::new(r.apply(subst))),
+            Type::TAp(l, r) => {
+                Type::TAp(Box::new(l.apply(subst.clone())), Box::new(r.apply(subst)))
+            }
             _ => self.clone(),
         }
     }
@@ -176,8 +182,8 @@ impl Types for Type {
 }
 
 impl<T: Types> Types for Vec<T> {
-    fn apply(&self, subst: &Subst) -> Self {
-        self.iter().map(|t| t.apply(subst)).collect()
+    fn apply(&self, subst: Subst) -> Self {
+        self.iter().map(|t| t.apply(subst.clone())).collect()
     }
 
     fn tv(&self) -> BTreeSet<Tyvar> {
@@ -190,7 +196,7 @@ fn var_bind(u: &Tyvar, t: &Type) -> Result<Subst, DynError> {
     // t == Type::TVar(u)
     if let Type::TVar(u_) = t {
         if u == u_ {
-            return Ok(NULL_SUBST);
+            return Ok(null_subst());
         }
     }
 
@@ -203,7 +209,7 @@ fn var_bind(u: &Tyvar, t: &Type) -> Result<Subst, DynError> {
         return Err("kinds do not match".into());
     }
 
-    Ok(vec![(u.clone(), t.clone())])
+    Ok(vec![(u.clone(), t.clone())].into())
 }
 
 /// Get the most general unifier.
@@ -211,36 +217,38 @@ pub(crate) fn mgu(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
     match (t1, t2) {
         (Type::TAp(l1, r1), Type::TAp(l2, r2)) => {
             let s1 = mgu(l1, l2)?;
-            let s2 = mgu(&r1.apply(&s1), &r2.apply(&s1))?;
-            Ok(compose(&s2, &s1))
+            let s2 = mgu(&r1.apply(s1.clone()), &r2.apply(s1.clone()))?;
+            Ok(compose(s2, s1))
         }
         (Type::TVar(u), t) => var_bind(u, t),
         (t, Type::TVar(u)) => var_bind(u, t),
-        (Type::TCon(tc1), Type::TCon(tc2)) if tc1 == tc2 => Ok(NULL_SUBST),
+        (Type::TCon(tc1), Type::TCon(tc2)) if tc1 == tc2 => Ok(null_subst()),
         _ => Err("types do not unify".into()),
     }
 }
 
 /// Compose two substitutions.
-pub(crate) fn compose(s1: &Subst, s2: &Subst) -> Subst {
-    s2.iter()
-        .map(|(u, t)| (u.clone(), t.apply(s1)))
-        .chain(s1.clone().into_iter())
+pub(crate) fn compose(s1: Subst, s2: Subst) -> Subst {
+    s2.to_owned()
+        .iter()
+        .map(|(u, t)| (u.clone(), t.apply(s1.clone())))
+        .chain(s1.iter().cloned())
         .collect()
 }
 
 /// Merge two substitutions.
 /// If there is a conflict, return `Err`.
 fn merge(mut s1: Subst, s2: Subst) -> Result<Subst, DynError> {
-    fn agree(s1: &Subst, s2: &Subst) -> bool {
+    fn agree(s1: Subst, s2: Subst) -> bool {
         let set1: BTreeSet<_> = s1.iter().map(|(t, _)| t).collect();
         let set2: BTreeSet<_> = s2.iter().map(|(t, _)| t).collect();
-        set1.intersection(&set2)
-            .all(|t| Type::TVar((*t).clone()).apply(s1) == Type::TVar((*t).clone()).apply(s2))
+        set1.intersection(&set2).all(|t| {
+            Type::TVar((*t).clone()).apply(s1.clone()) == Type::TVar((*t).clone()).apply(s2.clone())
+        })
     }
 
-    if agree(&s1, &s2) {
-        s1.extend(s2.into_iter());
+    if agree(s1.clone(), s2.clone()) {
+        s1.to_mut().extend(s2.iter().cloned());
         Ok(s1)
     } else {
         Err("merge: type variable conflict".into())
@@ -256,8 +264,8 @@ pub(crate) fn type_match(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
             let s2 = type_match(r1, r2)?;
             merge(s1, s2)
         }
-        (Type::TVar(u), t) if u.kind() == t.kind() => Ok(vec![(u.clone(), t.clone())]),
-        (Type::TCon(tc1), Type::TCon(tc2)) if tc1 == tc2 => Ok(NULL_SUBST),
+        (Type::TVar(u), t) if u.kind() == t.kind() => Ok(vec![(u.clone(), t.clone())].into()),
+        (Type::TCon(tc1), Type::TCon(tc2)) if tc1 == tc2 => Ok(null_subst()),
         _ => Err("types do not match".into()),
     }
 }

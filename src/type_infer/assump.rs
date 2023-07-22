@@ -13,7 +13,7 @@ pub struct Assump {
 }
 
 impl Types for Assump {
-    fn apply(&self, subst: &Subst) -> Self {
+    fn apply(&self, subst: Subst) -> Self {
         Assump {
             id: self.id.clone(),
             scheme: self.scheme.apply(subst),
