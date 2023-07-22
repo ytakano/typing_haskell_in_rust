@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 /// Type class.
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct Class {
-    super_class: Vec<CowStr>,
+    super_class: CowVec<CowStr>,
     insts: Vec<Inst>,
 }
 
@@ -45,7 +45,7 @@ impl ClassEnv {
     /// env.add_class("Eq".into(), vec![]);
     /// env.add_class("Ord".into(), vec!["Eq".into()]);
     /// ```
-    pub fn add_class(&mut self, id: CowStr, super_class: Vec<CowStr>) -> Result<(), DynError> {
+    pub fn add_class(&mut self, id: CowStr, super_class: CowVec<CowStr>) -> Result<(), DynError> {
         if self.classes.contains_key(&id) {
             return Err("class already defined".into());
         }
@@ -112,8 +112,8 @@ impl ClassEnv {
         Ok(())
     }
 
-    fn super_class(&self, id: &CowStr) -> Option<&[CowStr]> {
-        self.classes.get(id).map(|c| c.super_class.as_slice())
+    fn super_class(&self, id: &CowStr) -> Option<CowVec<CowStr>> {
+        self.classes.get(id).map(|c| c.super_class.clone())
     }
 
     /// Get instances of a class.
@@ -125,7 +125,7 @@ impl ClassEnv {
         let mut result = vec![pred.clone()];
 
         if let Some(super_classes) = self.super_class(&pred.id) {
-            for super_class in super_classes {
+            for super_class in super_classes.iter() {
                 result.append(&mut self.by_super(&Pred {
                     id: super_class.clone(),
                     t: pred.t.clone(),
@@ -216,7 +216,7 @@ mod tests {
 
         // add `Eq` class
         let mut env = ClassEnv::new(vec![].into());
-        env.add_class("Eq".into(), vec![]).unwrap();
+        env.add_class("Eq".into(), vec![].into()).unwrap();
 
         // add a instance of `Eq` for `Int`
         let eq_int = Pred {

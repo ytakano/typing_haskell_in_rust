@@ -4,11 +4,12 @@ use crate::{
     predicate::Pred,
     type_class::ClassEnv,
     types::{Type, Types, Tyvar},
+    CowVec,
 };
 
 pub struct Ambiguity {
     pub tyvar: Tyvar,
-    pub preds: Vec<Pred>,
+    pub preds: CowVec<Pred>,
 }
 
 impl Ambiguity {

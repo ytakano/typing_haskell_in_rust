@@ -11,43 +11,50 @@ use std::vec;
 
 pub fn haskell(class_env: &mut ClassEnv) {
     // core classes
-    class_env.add_class("Eq".into(), Vec::new()).unwrap();
+    class_env.add_class("Eq".into(), Vec::new().into()).unwrap();
     class_env
-        .add_class("Ord".into(), vec!["Eq".into()])
+        .add_class("Ord".into(), vec!["Eq".into()].into())
         .unwrap();
-    class_env.add_class("Show".into(), vec![]).unwrap();
-    class_env.add_class("Read".into(), vec![]).unwrap();
-    class_env.add_class("Bounded".into(), vec![]).unwrap();
-    class_env.add_class("Enum".into(), vec![]).unwrap();
-    class_env.add_class("Functor".into(), vec![]).unwrap();
+    class_env.add_class("Show".into(), vec![].into()).unwrap();
+    class_env.add_class("Read".into(), vec![].into()).unwrap();
     class_env
-        .add_class("Applicative".into(), vec!["Functor".into()])
+        .add_class("Bounded".into(), vec![].into())
+        .unwrap();
+    class_env.add_class("Enum".into(), vec![].into()).unwrap();
+    class_env
+        .add_class("Functor".into(), vec![].into())
         .unwrap();
     class_env
-        .add_class("Monad".into(), vec!["Applicative".into()])
+        .add_class("Applicative".into(), vec!["Functor".into()].into())
+        .unwrap();
+    class_env
+        .add_class("Monad".into(), vec!["Applicative".into()].into())
         .unwrap();
 
     // numeric classes
-    class_env.add_class("Num".into(), vec![]).unwrap();
+    class_env.add_class("Num".into(), vec![].into()).unwrap();
     class_env
-        .add_class("Real".into(), vec!["Num".into(), "Ord".into()])
+        .add_class("Real".into(), vec!["Num".into(), "Ord".into()].into())
         .unwrap();
     class_env
-        .add_class("Fractional".into(), vec!["Num".into()])
+        .add_class("Fractional".into(), vec!["Num".into()].into())
         .unwrap();
     class_env
-        .add_class("Integral".into(), vec!["Real".into(), "Enum".into()])
+        .add_class("Integral".into(), vec!["Real".into(), "Enum".into()].into())
         .unwrap();
     class_env
-        .add_class("RealFrac".into(), vec!["Real".into(), "Fractional".into()])
+        .add_class(
+            "RealFrac".into(),
+            vec!["Real".into(), "Fractional".into()].into(),
+        )
         .unwrap();
     class_env
-        .add_class("Floating".into(), vec!["Fractional".into()])
+        .add_class("Floating".into(), vec!["Fractional".into()].into())
         .unwrap();
     class_env
         .add_class(
             "RealFloat".into(),
-            vec!["RealFrac".into(), "Floating".into()],
+            vec!["RealFrac".into(), "Floating".into()].into(),
         )
         .unwrap();
 
