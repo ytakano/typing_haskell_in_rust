@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct Class {
     super_class: CowVec<CowStr>,
-    insts: Vec<Inst>,
+    insts: CowVec<Inst>,
 }
 
 /// Instance.
@@ -58,7 +58,7 @@ impl ClassEnv {
             id,
             Class {
                 super_class,
-                insts: Vec::new(),
+                insts: Vec::new().into(),
             },
         );
 
@@ -107,6 +107,7 @@ impl ClassEnv {
             .get_mut(&p.id)
             .unwrap()
             .insts
+            .to_mut()
             .push(Inst { preds: ps, t: p });
 
         Ok(())
@@ -117,8 +118,8 @@ impl ClassEnv {
     }
 
     /// Get instances of a class.
-    fn insts(&self, id: &CowStr) -> Option<&[Inst]> {
-        self.classes.get(id).map(|c| c.insts.as_slice())
+    fn insts(&self, id: &CowStr) -> Option<CowVec<Inst>> {
+        self.classes.get(id).map(|c| c.insts.clone())
     }
 
     fn by_super(&self, pred: &Pred) -> Vec<Pred> {
