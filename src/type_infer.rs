@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Expr, Literal, Pat},
+    ast::{Alt, Expr, Literal, Pat},
     error::DynError,
     predicate::{Pred, Qual},
     type_class::ClassEnv,
@@ -193,6 +193,45 @@ impl TypeInfer {
                 todo!()
             }
         }
+    }
+
+    fn ti_alt(
+        &mut self,
+        ce: &ClassEnv,
+        assumps: &[Assump],
+        alt: &Alt,
+    ) -> Result<(Vec<Pred>, Type), DynError> {
+        let (mut ps, mut ass, ts) = self.ti_pats(&alt.pats)?;
+        ass.extend(assumps.iter().map(|a| a.clone()));
+        let (mut qs, t) = self.ti_expr(ce, &ass, &alt.expr)?;
+
+        ps.append(&mut qs);
+
+        let t2 = ts.iter().rev().fold(t, |acc, t| mk_fn(t.clone(), acc));
+
+        Ok((ps, t2))
+    }
+
+    fn ti_alts(
+        &mut self,
+        ce: &ClassEnv,
+        assumps: &[Assump],
+        alts: &[Alt],
+        t: &Type,
+    ) -> Result<Vec<Pred>, DynError> {
+        let mut preds = Vec::new();
+        let mut ts = Vec::new();
+        for alt in alts.iter() {
+            let (mut ps, t2) = self.ti_alt(ce, assumps, alt)?;
+            preds.append(&mut ps);
+            ts.push(t2);
+        }
+
+        for t2 in ts.iter() {
+            self.unify(t, t2)?;
+        }
+
+        Ok(preds)
     }
 
     fn split(
