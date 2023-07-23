@@ -458,6 +458,14 @@ fn to_scheme(t: &Type) -> Scheme {
     }
 }
 
+/// Generates a unique identifier string from a given usize value.
+///
+/// This function takes an usize `n` as input and returns a String of the form "v{n}".
+/// This function is typically used to generate fresh variable names during processes such as type inference.
+///
+/// # Arguments
+///
+/// * `n` - A usize value used to generate a unique identifier string.
 fn enum_id(n: usize) -> String {
     format!("v{n}")
 }

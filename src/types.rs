@@ -10,28 +10,48 @@ pub(crate) fn null_subst() -> Subst {
     Cow::Owned(vec![])
 }
 
-/// Kind of type.
+/// Represents the kind of a type constructor in Haskell's type system.
+/// Kinds play a similar role for type constructors as types do for values.
+///
+/// # Variants
+///
+/// - `Star`: Represents the set of all simple type expressions (i.e., nullary type expressions),
+///   such as `Int` and `Char → Bool`.
+///
+/// - `Kfun(Box<Kind>, Box<Kind>)`: Represents type constructors that take an argument type of
+///   one kind and return a result type of another kind. For instance, the standard list,
+///   `Maybe`, and `IO` constructors all have kind `Star → Star` in Haskell.
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
 pub enum Kind {
     Star,
     Kfun(Box<Kind>, Box<Kind>),
 }
 
-/// Type variable.
+/// A `Tyvar` represents a type variable in the type system.
+/// It consists of an identifier and a kind.
+/// The identifier is a unique name for the variable,
+/// and the kind classifies the variable into a category.
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
 pub struct Tyvar {
     pub id: CowStr,
     pub kind: Kind,
 }
 
-/// Type constructor.
+/// A `Tycon` represents a type constructor in the type system.
+/// It consists of an identifier and a kind.
+/// The identifier is a unique name for the constructor,
+/// and the kind represents the "type" of the constructor.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Tycon {
     pub id: CowStr,
     pub kind: Kind,
 }
 
-/// Type.
+/// The `Type` enum represents the different kinds of types in the type system.
+/// - `TVar(Tyvar)`: A type variable.
+/// - `TCon(Tycon)`: A type constructor.
+/// - `TAp(Box<Type>, Box<Type>)`: An application of one type to another.
+/// - `TGen(usize)`: A generic or quantified type variable, used in the representation of type schemes.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Type {
     TVar(Tyvar),               // type variable
@@ -40,8 +60,11 @@ pub enum Type {
     TGen(usize),               // generic or quantified type variables
 }
 
+/// A macro to easily define standard primitive datatypes as type constants.
+/// Each primitive datatype has `Star` kind, and is represented as a `Type::TCon` variant.
 macro_rules! def_type {
     ( $id:ident, $ty:expr) => {
+        /// A Lazy static variable representing the `$ty` type.
         pub static $id: Lazy<Type> = Lazy::new(|| {
             Type::TCon(Tycon {
                 id: $ty.into(),
@@ -51,14 +74,16 @@ macro_rules! def_type {
     };
 }
 
-def_type!(T_UNIT, "Unit");
-def_type!(T_CHAR, "Char");
-def_type!(T_BOOL, "Bool");
-def_type!(T_INT, "Int");
-def_type!(T_INTEGER, "Integer");
-def_type!(T_FOLAT, "Float");
-def_type!(T_DOUBLE, "Double");
+def_type!(T_UNIT, "Unit"); // The `Unit` type.
+def_type!(T_CHAR, "Char"); // The `Char` type.
+def_type!(T_BOOL, "Bool"); // The `Bool` type.
+def_type!(T_INT, "Int"); // The `Int` type.
+def_type!(T_INTEGER, "Integer"); // The `Integer` type.
+def_type!(T_FOLAT, "Float"); // The `Float` type.
+def_type!(T_DOUBLE, "Double"); // The `Double` type.
 
+/// A Lazy static variable representing the list type.
+/// The list type is represented as a type constructor with a kind of `Star -> Star`.
 pub static T_LIST: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "[]".into(),
@@ -66,6 +91,8 @@ pub static T_LIST: Lazy<Type> = Lazy::new(|| {
     })
 });
 
+/// A Lazy static variable representing the function type.
+/// The function type is represented as a type constructor with a kind of `Star -> Star -> Star`.
 pub static T_ARROW: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "(->)".into(),
@@ -76,6 +103,8 @@ pub static T_ARROW: Lazy<Type> = Lazy::new(|| {
     })
 });
 
+/// A Lazy static variable representing the 2-tuple type.
+/// The 2-tuple type is represented as a type constructor with a kind of `Star -> Star -> Star`.
 pub static T_TUPLE2: Lazy<Type> = Lazy::new(|| {
     Type::TCon(Tycon {
         id: "(,)".into(),
@@ -86,7 +115,13 @@ pub static T_TUPLE2: Lazy<Type> = Lazy::new(|| {
     })
 });
 
-/// Make a function type of `a -> b`.
+/// Constructs a function type by taking two types as arguments and
+/// returns a type application of the function arrow `T_ARROW`.
+///
+/// # Arguments
+///
+/// * `a` - The type of the argument to the function.
+/// * `b` - The return type of the function.
 pub fn mk_fn(a: Type, b: Type) -> Type {
     Type::TAp(
         Box::new(Type::TAp(Box::new(T_ARROW.clone()), Box::new(a))),
@@ -94,10 +129,23 @@ pub fn mk_fn(a: Type, b: Type) -> Type {
     )
 }
 
+/// Constructs a list type by taking a type as an argument and
+/// returns a type application of the list type constructor `T_LIST`.
+///
+/// # Arguments
+///
+/// * `a` - The type of the elements in the list.
 pub fn mk_list(a: Type) -> Type {
     Type::TAp(Box::new(T_LIST.clone()), Box::new(a))
 }
 
+/// Constructs a pair type by taking two types as arguments and
+/// returns a type application of the tuple type constructor `T_TUPLE2`.
+///
+/// # Arguments
+///
+/// * `a` - The first element of the pair.
+/// * `b` - The second element of the pair.
 pub fn mk_pair(a: Type, b: Type) -> Type {
     Type::TAp(
         Box::new(Type::TAp(Box::new(T_TUPLE2.clone()), Box::new(a))),
@@ -105,26 +153,44 @@ pub fn mk_pair(a: Type, b: Type) -> Type {
     )
 }
 
+/// Constructs a type variable by taking an identifier and a kind as arguments.
+///
+/// # Arguments
+///
+/// * `id` - The identifier for the type variable.
+/// * `kind` - The kind of the type variable.
 pub fn mk_tvar(id: CowStr, kind: Kind) -> Type {
     Type::TVar(Tyvar { id, kind })
 }
 
+/// The `HasKind` trait represents types that have a `Kind`.
+/// It provides a method `kind` which returns the `Kind` of the implementing type.
 pub(crate) trait HasKind {
     fn kind(&self) -> Kind;
 }
 
+/// Implementation of the `HasKind` trait for `Tyvar`.
+/// A `Tyvar` has a `Kind` stored in it, so it simply returns a clone of that `Kind`.
 impl HasKind for Tyvar {
     fn kind(&self) -> Kind {
         self.kind.clone()
     }
 }
 
+/// Implementation of the `HasKind` trait for `Tycon`.
+/// Similar to `Tyvar`, a `Tycon` has a `Kind` stored in it, so it simply returns a clone of that `Kind`.
 impl HasKind for Tycon {
     fn kind(&self) -> Kind {
         self.kind.clone()
     }
 }
 
+/// Implementation of the `HasKind` trait for `Type`.
+/// The `Kind` of a `Type` depends on its variant. For `TCon` and `TVar`, it simply returns
+/// the `Kind` of the contained `Tycon` or `Tyvar`. For `TAp`, it recursively calls `kind` on the first type
+/// assuming the type is well-formed, the first type `t` must have a kind `k′ → k`,
+/// where `k′` is the kind of the second type `t′` and `k` is the kind of the whole application.
+/// `TGen` variant is not supposed to be reachable.
 impl HasKind for Type {
     fn kind(&self) -> Kind {
         match self {

@@ -41,9 +41,9 @@ impl ClassEnv {
     ///
     /// use typing_haskell_in_rust::type_class::ClassEnv;
     ///
-    /// let mut env = ClassEnv::new(vec![]);
-    /// env.add_class("Eq".into(), vec![]);
-    /// env.add_class("Ord".into(), vec!["Eq".into()]);
+    /// let mut env = ClassEnv::new(vec![].into());
+    /// env.add_class("Eq".into(), vec![].into());
+    /// env.add_class("Ord".into(), vec!["Eq".into()].into());
     /// ```
     pub fn add_class(&mut self, id: CowStr, super_class: CowVec<CowStr>) -> Result<(), DynError> {
         if self.classes.contains_key(&id) {
@@ -78,15 +78,15 @@ impl ClassEnv {
     /// use typing_haskell_in_rust::{type_class::ClassEnv, predicate::Pred, types::T_INT};
     ///
     /// // add `Eq` class
-    /// let mut env = ClassEnv::new(vec![]);
-    /// env.add_class("Eq".into(), vec![]).unwrap();
+    /// let mut env = ClassEnv::new(vec![].into());
+    /// env.add_class("Eq".into(), vec![].into()).unwrap();
     ///
     /// // add a instance of `Eq` for `Int`
     /// let eq_int = Pred {
     ///     id: "Eq".into(),
     ///     t: T_INT.clone(),
     /// };
-    /// env.add_inst(vec![], eq_int).unwrap();
+    /// env.add_inst(vec![].into(), eq_int).unwrap();
     /// ```
     pub fn add_inst(&mut self, ps: CowVec<Pred>, p: Pred) -> Result<(), DynError> {
         if !self.classes.contains_key(&p.id) {
