@@ -4,8 +4,10 @@ use std::{borrow::Cow, collections::BTreeSet};
 
 use crate::{error::DynError, CowStr, CowVec};
 
+/// A substitution type, which maps type variables (`Tyvar`) to types (`Type`).
 pub(crate) type Subst = CowVec<(Tyvar, Type)>;
 
+/// Returns an empty substitution, which is represented by an empty vector.
 pub(crate) fn null_subst() -> Subst {
     Cow::Owned(vec![])
 }
@@ -209,12 +211,20 @@ impl HasKind for Type {
     }
 }
 
+/// A trait for types that can have substitutions applied to them and
+/// that can return the set of type variables they contain.
 pub(crate) trait Types {
-    fn apply(&self, subst: Subst) -> Self; // apply `subst` to `self`
-    fn tv(&self) -> BTreeSet<Tyvar>; // set of type variables in `self`
+    /// Applies a given substitution `subst` to `self` and returns the result.
+    fn apply(&self, subst: Subst) -> Self;
+
+    /// Returns the set of type variables in `self`.
+    fn tv(&self) -> BTreeSet<Tyvar>;
 }
 
 impl Types for Type {
+    /// Applies a given substitution `subst` to this type. If the type is a type
+    /// variable that appears in `subst`, it is replaced by the corresponding
+    /// type. Otherwise, the type is left unchanged.
     fn apply(&self, subst: Subst) -> Self {
         match self {
             Type::TVar(u) => subst
@@ -229,6 +239,9 @@ impl Types for Type {
         }
     }
 
+    /// Returns the set of type variables in this type. For type variables, this
+    /// is a set containing the type variable itself. For application types, this
+    /// is the union of the sets of type variables in the types being applied.
     fn tv(&self) -> BTreeSet<Tyvar> {
         match self {
             Type::TVar(u) => {
@@ -247,14 +260,24 @@ impl Types for Type {
     }
 }
 
+/// Implements the `Types` trait for a vector of elements of a type that also
+/// implements the `Types` trait. This allows substitutions to be applied to
+/// each element in the vector and the set of type variables in the vector to
+/// be computed.
 impl<T: Types + Clone> Types for CowVec<T>
 where
     [T]: ToOwned,
 {
+    /// Applies a given substitution to each element in this vector.
+    /// The resulting vector consists of the results of applying the
+    /// substitution to each individual element.
     fn apply(&self, subst: Subst) -> Self {
         self.iter().map(|t| t.apply(subst.clone())).collect()
     }
 
+    /// Computes the set of type variables in this vector.
+    /// The resulting set is the union of the sets of type variables in each
+    /// individual element.
     fn tv(&self) -> BTreeSet<Tyvar> {
         self.iter().flat_map(|t| t.tv()).collect()
     }
@@ -296,7 +319,23 @@ pub(crate) fn mgu(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
     }
 }
 
-/// Compose two substitutions.
+/// Composes two substitutions `s1` and `s2`.
+///
+/// The composition of substitutions `s1` and `s2` represented as `s1@@s2` is
+/// computed such that `apply(s1@@s2)` is equivalent to `apply s1 . apply s2`.
+/// The operation is performed in two steps: first, for each `(u, t)` pair in `s2`,
+/// `apply s1` is called on `t`, and then `s1` is chained onto the result.
+/// This means that the bindings in `s1` take precedence over the bindings in `s2`
+/// for any common variables.
+///
+/// # Arguments
+///
+/// * `s1` - A `Subst` (substitution) instance
+/// * `s2` - Another `Subst` instance
+///
+/// # Returns
+///
+/// * A new `Subst` instance that represents the composition of `s1` and `s2`.
 pub(crate) fn compose(s1: Subst, s2: Subst) -> Subst {
     s2.to_owned()
         .iter()
@@ -305,8 +344,34 @@ pub(crate) fn compose(s1: Subst, s2: Subst) -> Subst {
         .collect()
 }
 
-/// Merge two substitutions.
-/// If there is a conflict, return `Err`.
+/// Merges two substitutions `s1` and `s2`.
+///
+/// The merge operation attempts to combine two substitutions, checking for conflicts
+/// between the substitutions. It returns a `Result` containing either the merged
+/// substitution if successful, or an error if there is a conflict.
+///
+/// A conflict occurs when there is a type variable that is common to both `s1` and `s2`
+/// but is associated with different types in each substitution.
+///
+/// If no conflicts are found, the function returns the combined substitution.
+/// If a conflict is detected, the function returns an error with a message indicating
+/// the conflict.
+///
+/// # Arguments
+///
+/// * `s1` - A mutable `Subst` (substitution) instance.
+/// * `s2` - Another `Subst` instance.
+///
+/// # Returns
+///
+/// * `Ok(Subst)` - A new `Subst` instance that represents the merge of `s1` and `s2`
+///                 if there are no conflicts.
+/// * `Err(DynError)` - An error indicating a conflict between `s1` and `s2` if any conflicts
+///                     are detected.
+///
+/// # Errors
+///
+/// This function will return an error if there is a conflict between `s1` and `s2` with respect to any common type variable.
 fn merge(mut s1: Subst, s2: Subst) -> Result<Subst, DynError> {
     fn agree(s1: Subst, s2: Subst) -> bool {
         let set1: BTreeSet<_> = s1.iter().map(|(t, _)| t).collect();
