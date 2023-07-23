@@ -1,3 +1,23 @@
+//! # Types Module
+//!
+//! The `types` module contains the fundamental types and operations needed for type checking and
+//! type inference in a type system. This module defines several key components:
+//!
+//! - `Kind`: Represents the kind of a type. In many type systems,
+//!    types themselves have types, which are called kinds. For example, type constructors may have a kind that describes the types of its arguments and its return type.
+//!
+//! - `Tyvar`: Represents a type variable in the type system.
+//!    Type variables are placeholders for any type and are typically used in the process of type inference and polymorphism.
+//!
+//! - `Tycon`: Represents a type constructor.
+//!    Type constructors are used to construct new types, especially complex or compound types.
+//!
+//! - `Type`: Represents a type in the type system.
+//!    It can be a type application (`TAp`), a type variable (`TVar`), or a type constructor (`TCon`).
+//!
+//! The `types` module is crucial for enabling static typing and type inference,
+//! which provide compile-time guarantees about the behavior of the code and can help prevent many common errors.
+
 use once_cell::sync::Lazy;
 
 use std::{borrow::Cow, collections::BTreeSet};
