@@ -283,7 +283,25 @@ where
     }
 }
 
-/// Special case of unifying a variable `u` with a type `t`.
+/// Binds a type variable `u` to a type `t`, resulting in a substitution.
+///
+/// This function takes a type variable and a type, and attempts to create a substitution
+/// from `u` to `t`. However, before the substitution is created, several checks are performed
+/// to ensure its validity:
+///
+/// - If `t` is a type variable that is the same as `u`, the function will return an empty substitution.
+/// - An occurs check is performed to ensure that `u` does not appear within `t` to avoid infinite types.
+/// - A kind check is performed to ensure that `u` and `t` have the same kind, preserving kind correctness.
+///
+/// # Arguments
+///
+/// * `u` - A type variable to be substituted.
+/// * `t` - A type that `u` should be substituted to.
+///
+/// # Returns
+///
+/// If the binding is successful, a `Subst` is returned where `Subst` is the substitution from `u` to `t`.
+/// If the binding fails due to an occurs check or kind check, an error is returned with a description of the issue.
 fn var_bind(u: &Tyvar, t: &Type) -> Result<Subst, DynError> {
     // t == Type::TVar(u)
     if let Type::TVar(u_) = t {
@@ -304,7 +322,24 @@ fn var_bind(u: &Tyvar, t: &Type) -> Result<Subst, DynError> {
     Ok(vec![(u.clone(), t.clone())].into())
 }
 
-/// Get the most general unifier.
+/// Compute the most general unifier (mgu) of two given types.
+///
+/// The function follows the algorithm described by J. A. Robinson (1965) and attempts to
+/// find the smallest substitution `s` that when applied to both input types `t1` and `t2`,
+/// makes them equal. In other words, it finds `s` such that `apply(s, t1) == apply(s, t2)`.
+///
+/// The function will return an error if the input types cannot be unified.
+/// For instance, if they are different type constants, or if a occurs-check or a kind-check fails.
+///
+/// # Arguments
+///
+/// * `t1` - A type to be unified.
+/// * `t2` - Another type to be unified.
+///
+/// # Returns
+///
+/// If unification is successful, a `Subst` is returned where `Subst` is the most general unifier.
+/// If unification fails, an error is returned with a description of the issue.
 pub(crate) fn mgu(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
     match (t1, t2) {
         (Type::TAp(l1, r1), Type::TAp(l2, r2)) => {
@@ -389,8 +424,28 @@ fn merge(mut s1: Subst, s2: Subst) -> Result<Subst, DynError> {
     }
 }
 
-/// Given two types `t1` and `t2`, the goal of matching is to find a substitution s such that apply `t1.(s) == t2`.
-/// Because the substitution is applied only to one type, this operation is often described as one-way matching.
+/// Performs one-way matching between two types.
+///
+/// This function takes two types and attempts to find a substitution `s` such that
+/// `apply s t1 = t2`. This operation is often described as one-way matching,
+/// because the substitution is applied only to `t1`.
+///
+/// The matching process follows the structure of the types:
+///
+/// - If both types are application types, it recursively matches both halves.
+/// - If `t1` is a type variable and its kind matches with `t2`, it creates a substitution from `t1` to `t2`.
+/// - If both types are the same type constructor, it returns a null substitution.
+/// - In all other cases, matching fails and it returns an error.
+///
+/// # Arguments
+///
+/// * `t1` - The first type for matching.
+/// * `t2` - The second type for matching.
+///
+/// # Returns
+///
+/// If the matching is successful, a `Subst` is returned where `Subst` is the substitution that makes `t1` match `t2`.
+/// If the matching fails, an error is returned with a description of the issue.
 pub(crate) fn type_match(t1: &Type, t2: &Type) -> Result<Subst, DynError> {
     match (t1, t2) {
         (Type::TAp(l1, r1), Type::TAp(l2, r2)) => {
