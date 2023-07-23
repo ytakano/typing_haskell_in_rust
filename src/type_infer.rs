@@ -38,6 +38,13 @@ struct Impl {
     alts: CowVec<Alt>,
 }
 
+fn restricted(bs: &[Impl]) -> bool {
+    fn simple(im: &Impl) -> bool {
+        im.alts.iter().any(|alt| alt.pats.is_empty())
+    }
+    bs.iter().any(simple)
+}
+
 #[derive(Debug)]
 struct TypeInfer {
     subst: Subst,
@@ -300,17 +307,22 @@ impl TypeInfer {
     ) -> Result<(CowVec<Pred>, CowVec<Assump>), DynError> {
         let ts: CowVec<_> = bs.iter().map(|_| self.new_tvar(Kind::Star)).collect();
 
-        let is = bs.iter().map(|im| im.id.clone());
+        let is: Vec<_> = bs.iter().map(|im| im.id.clone()).collect();
         let scs = ts.iter().map(|t| to_scheme(&t));
-        let assumps2 = is
+        let assumps2: Vec<_> = is
+            .iter()
             .zip(scs)
-            .map(|(id, scheme)| Assump { id, scheme })
-            .chain(assumps.iter().cloned());
+            .map(|(id, scheme)| Assump {
+                id: id.clone(),
+                scheme,
+            })
+            .chain(assumps.iter().cloned())
+            .collect();
         let altss = bs.iter().map(|im| im.alts.clone());
 
         let pss: Result<Vec<_>, _> = altss
             .zip(ts.iter())
-            .map(|(alts, t)| self.ti_alts(ce, &assumps, &alts, t))
+            .map(|(alts, t)| self.ti_alts(ce, &assumps2, &alts, t))
             .collect();
         let pss = pss?;
 
@@ -321,9 +333,8 @@ impl TypeInfer {
 
         let mut it = vss.clone().into_iter().rev();
         let first = it.next().ok_or("vss is empty")?;
-        let gs = it
-            .fold(first, |acc, s| s.union(&acc).cloned().collect())
-            .difference(&fs);
+        let it = it.fold(first, |acc, s| s.union(&acc).cloned().collect());
+        let gs = it.difference(&fs);
 
         let mut it = vss.into_iter().rev();
         let first = it.next().ok_or("vss is empty")?;
@@ -332,9 +343,50 @@ impl TypeInfer {
             .into_iter()
             .collect();
 
-        let (ds, rs) = self.split(ce, &fs, &gs_vec, ps2)?;
+        let (mut ds, mut rs) = self.split(ce, &fs, &gs_vec, ps2)?;
 
-        todo!()
+        if restricted(&bs) {
+            let tv_rs = rs.tv();
+            let gs2: Vec<_> = gs.filter(|p| !tv_rs.contains(p)).cloned().collect();
+            let scs2 = ts2.iter().map(|t| {
+                quantify(
+                    &gs2,
+                    Qual {
+                        preds: Cow::Borrowed(&[]),
+                        t: t.clone(),
+                    },
+                )
+            });
+
+            ds.to_mut().append(rs.to_mut());
+
+            let right = is
+                .into_iter()
+                .zip(scs2)
+                .map(|(id, scheme)| Assump { id, scheme })
+                .collect();
+
+            Ok((ds, right))
+        } else {
+            let gs: Vec<_> = gs.cloned().collect();
+            let scs2 = ts2.iter().map(|t| {
+                quantify(
+                    &gs,
+                    Qual {
+                        preds: rs.clone(),
+                        t: t.clone(),
+                    },
+                )
+            });
+
+            let right = is
+                .into_iter()
+                .zip(scs2)
+                .map(|(id, scheme)| Assump { id, scheme })
+                .collect();
+
+            Ok((ds, right))
+        }
     }
 
     fn split(
