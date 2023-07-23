@@ -1,22 +1,39 @@
 //! # Types Module
 //!
-//! The `types` module contains the fundamental types and operations needed for type checking and
-//! type inference in a type system. This module defines several key components:
+//! The `types` module is primarily dedicated to the representation of types and
+//! their various components, including the concept of kinds (`Kind`),
+//! type variables (`Tyvar`), and type constructors (`Tycon`).
+//! The main building block of this module is the `Type` enum,
+//! which has several variants such as `TAp`, `TVar`, and `TCon`.
 //!
-//! - `Kind`: Represents the kind of a type. In many type systems,
-//!    types themselves have types, which are called kinds. For example, type constructors may have a kind that describes the types of its arguments and its return type.
+//! ## Kind
 //!
-//! - `Tyvar`: Represents a type variable in the type system.
-//!    Type variables are placeholders for any type and are typically used in the process of type inference and polymorphism.
+//! `Kind` is a representation of the "type of a type".
+//! In simpler terms, it helps to classify types into different categories.
+//! `Kind` is an enum with two variants: `Star` and `Kfun`.
+//! The `Star` kind represents simple types, and `Kfun` represents kinds of type constructors
+//! that take one type and return another.
 //!
-//! - `Tycon`: Represents a type constructor.
-//!    Type constructors are used to construct new types, especially complex or compound types.
+//! For example, in Haskell, the kind of `Int` is `*` (equivalent to `Star`),
+//! while the kind of `Maybe` is `* -> *` (equivalent to `Kfun(Star, Star)`),
+//! indicating that `Maybe` is a type function that takes one type and produces another.
 //!
-//! - `Type`: Represents a type in the type system.
-//!    It can be a type application (`TAp`), a type variable (`TVar`), or a type constructor (`TCon`).
+//! ## Tyvar
 //!
-//! The `types` module is crucial for enabling static typing and type inference,
-//! which provide compile-time guarantees about the behavior of the code and can help prevent many common errors.
+//! `Tyvar` represents a type variable. It consists of an identifier (`id`) and a kind (`kind`).
+//!
+//! In Haskell, if you have a function like `id :: a -> a`,
+//! `a` would be represented as a `Tyvar` in our system,
+//! where `a` is the `id` and its `kind` would be `Star`, representing a simple type.
+//!
+//! ## Tycon
+//!
+//! `Tycon` represents a type constructor.
+//! Similar to `Tyvar`, it consists of an identifier (`id`) and a kind (`kind`).
+//! In Haskell, `Maybe` or `[]` (the list constructor) would be examples of type constructors.
+//! For instance, `Maybe` would be represented as `Tycon { id: "Maybe", kind: Kfun(Star, Star) }`.
+//! By combining these building blocks, the `types` module provides a robust foundation
+//! for the representation and manipulation of types within the type system.
 
 use once_cell::sync::Lazy;
 
