@@ -7,22 +7,37 @@ use crate::{
 
 use std::collections::BTreeMap;
 
-/// Type class.
+/// Represents a class, which includes its superclasses and instances.
+///
+/// `super_class`: A vector of superclass identifiers, stored as CowStr for efficient memory usage.
+/// Each identifier in the vector represents a superclass of the class.
+///
+/// `insts`: A vector of instances, represented as `Inst` which is equivalent to `Qual<Pred>`.
+/// Each instance represents a specific implementation of the class for a given type.
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct Class {
     super_class: CowVec<CowStr>,
     insts: CowVec<Inst>,
 }
 
-/// Instance.
+/// Represents a qualified predicate `Inst`, used for defining instances.
+///
+/// It is equivalent to `Qual<Pred>`, representing a predicate (`Pred`) possibly qualified by other predicates.
 pub(crate) type Inst = Qual<Pred>;
 
+/// Represents a class environment, which is essentially a mapping of class identifiers to class declarations.
+/// It also includes default types used in the environment.
 pub struct ClassEnv {
     classes: BTreeMap<CowStr, Class>,
     pub(crate) default_types: CowVec<Type>, // default types
 }
 
 impl ClassEnv {
+    /// Creates a new `ClassEnv` with the given default types.
+    ///
+    /// `default_types`: The default types to be used in the class environment.
+    ///
+    /// Returns: A new `ClassEnv` with no classes defined and the provided default types.
     pub fn new(default_types: CowVec<Type>) -> Self {
         ClassEnv {
             classes: BTreeMap::new(),
@@ -30,7 +45,13 @@ impl ClassEnv {
         }
     }
 
-    /// Add a type class.
+    /// Adds a new class with the given identifier and superclasses to the class environment.
+    ///
+    /// `id`: The identifier for the new class.
+    /// `super_class`: The superclasses for the new class.
+    ///
+    /// Returns: `Ok(())` if the class was successfully added, or an `Err(DynError)` if the class already
+    /// exists in the environment or if any of the superclasses are not defined.
     ///
     /// # Examples
     ///
@@ -65,7 +86,17 @@ impl ClassEnv {
         Ok(())
     }
 
-    /// Add an instance.
+    /// Adds a new instance to the class identified by the predicate `p` with the given set of predicates `ps`.
+    ///
+    /// `ps`: The set of predicates that make up the instance.
+    /// `p`: The predicate identifying the class to which the instance should be added.
+    ///
+    /// Returns: `Ok(())` if the instance was successfully added, or an `Err(DynError)` if the class does not exist
+    /// in the environment, or if the instance overlaps with any existing instance of the class.
+    ///
+    /// Overlapping instances are those for which there exists a substitution that makes the head of the instance equal
+    /// to the head of an existing instance. This is checked using the `overlap` function, which is defined here as a closure
+    /// that uses the `mgu_pred` function to attempt to unify the two predicates. If unification succeeds, the instances overlap.
     ///
     /// # Examples
     ///
@@ -113,19 +144,53 @@ impl ClassEnv {
         Ok(())
     }
 
-    fn super_class(&self, id: &str) -> Option<CowVec<CowStr>> {
+    /// Returns a vector of super classes corresponding to the given identifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - A string slice that holds the identifier of the class.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<CowVec<CowStr>>` - An Option wrapping a vector of super classes (as CowStr) if
+    /// they exist, else None.
+    fn super_classes(&self, id: &str) -> Option<CowVec<CowStr>> {
         self.classes.get(id).map(|c| c.super_class.clone())
     }
 
-    /// Get instances of a class.
+    /// Returns a copy of the instance declarations associated with a given class identifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `id`: The identifier of a class.
+    ///
+    /// # Returns
+    ///
+    /// An `Option` containing a `CowVec` of instance declarations (`Inst`) associated with the class.
+    /// If the class does not exist, `None` is returned.
     fn insts(&self, id: &str) -> Option<CowVec<Inst>> {
         self.classes.get(id).map(|c| c.insts.clone())
     }
 
+    /// Calculates and returns a vector of Pred instances which hold for the given predicate's
+    /// class and its superclasses recursively.
+    ///
+    /// For example, in Haskell, if we have a class hierarchy where `Num` is a superclass of `Integral`
+    /// `(class Num a => Integral a)`, and we want to find all the classes a type must be an instance
+    /// of given that it is an instance of `Integral`, we could use this function.
+    ///
+    /// # Arguments
+    ///
+    /// * `pred` - A reference to a predicate instance.
+    ///
+    /// # Returns
+    ///
+    /// * `Vec<Pred>` - A vector of Pred instances which hold for the class of given predicate
+    /// and its superclasses.
     fn by_super(&self, pred: &Pred) -> Vec<Pred> {
         let mut result = vec![pred.clone()];
 
-        if let Some(super_classes) = self.super_class(&pred.id) {
+        if let Some(super_classes) = self.super_classes(&pred.id) {
             for super_class in super_classes.iter() {
                 result.append(&mut self.by_super(&Pred {
                     id: super_class.clone(),
@@ -137,6 +202,22 @@ impl ClassEnv {
         result
     }
 
+    /// Determines the list of predicates (sub-goals) that need to be satisfied for the given predicate
+    /// to be an instance of a certain class.
+    ///
+    /// The method iterates through the instance declarations associated with the class of the given
+    /// predicate. If it finds an instance declaration whose head matches the given predicate,
+    /// it applies the corresponding substitution to the predicates in the instance declaration,
+    /// and returns these as a list of sub-goals.
+    ///
+    /// # Arguments
+    ///
+    /// * `pred`: A predicate for which the list of sub-goals is determined.
+    ///
+    /// # Returns
+    ///
+    /// An `Option` containing a `CowVec` of predicates (sub-goals) that need to be satisfied for the
+    /// given predicate to be an instance of a certain class. If no matching instance is found, `None` is returned.
     fn by_inst(&self, pred: &Pred) -> Option<CowVec<Pred>> {
         for it in self.insts(&pred.id)?.iter() {
             if let Ok(u) = type_match_pred(&it.t, pred) {

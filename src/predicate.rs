@@ -1,7 +1,5 @@
 //! # Predicate Module
 //!
-//! The `Pred` struct lies at the core of the `predicate` module:
-//!
 //! The `Pred` struct represents a type class predicate in a polymorphically typed language.
 //! Each instance of `Pred` includes a class identifier (`id`) and a type (`t`).
 //! The `id` is a string representing the name of the class,
